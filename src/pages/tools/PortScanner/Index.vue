@@ -545,7 +545,8 @@ const exportResults = (format: 'txt' | 'json' | 'csv') => {
 .progress-section {
   margin-top: 20px;
   padding: 20px;
-  background-color: #f5f7fa;
+  background-color: rgba(30, 27, 46, 0.4);
+  border: 1px solid rgba(120, 110, 160, 0.2);
   border-radius: 8px;
 }
 

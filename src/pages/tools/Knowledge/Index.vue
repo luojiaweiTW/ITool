@@ -1433,7 +1433,7 @@ function handleKeyDown(event: KeyboardEvent) {
   width: 100%;
   height: 100%;
   border: none;
-  background: #fff;
+  background: rgba(30, 27, 46, 0.6);
   position: relative;
   z-index: 2;
 }

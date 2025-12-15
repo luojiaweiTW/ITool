@@ -38,7 +38,7 @@ export default defineConfig({
   build: {
     // 🔧 构建优化：减少内存使用
     chunkSizeWarningLimit: 1000,
-    rollupOptions: {
+    rollupOptions: {  
       output: {
         // 手动分块，减少单个chunk大小
         manualChunks(id) {

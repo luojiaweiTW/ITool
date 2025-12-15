@@ -52,6 +52,8 @@ import FileHash from '@/pages/tools/FileHash/Index.vue'
 import Calculator from '@/pages/tools/Calculator/Index.vue'
 import TimeCalculator from '@/pages/tools/TimeCalculator/Index.vue'
 import Base64Image from '@/pages/tools/Base64Image/Index.vue'
+import EnglishReader from '@/pages/tools/EnglishReader/Index.vue'
+import WordBook from '@/pages/tools/WordBook/Index.vue'
 
 const routes: RouteRecordRaw[] = [
   {
@@ -395,6 +397,30 @@ const routes: RouteRecordRaw[] = [
           description: '图片与 Base64 互转，支持拖拽上传和直接下载',
           icon: 'i-mdi-image-filter-center-focus',
           category: '图片工具',
+        }
+      },
+      
+      // ========== 学习工具 ==========
+      {
+        path: 'tools/english-reader',
+        name: 'EnglishReader',
+        component: EnglishReader,
+        meta: {
+          title: '英语学习',
+          description: '本地加载新概念英语课文，支持音频点读与双语对照',
+          icon: 'i-mdi-school',
+          category: '学习工具',
+        }
+      },
+      {
+        path: 'tools/wordbook',
+        name: 'WordBook',
+        component: WordBook,
+        meta: {
+          title: '单词本',
+          description: '管理学习中的单词，支持添加、编辑、复习',
+          icon: 'i-mdi-book-open-variant',
+          category: '学习工具',
         }
       },
       

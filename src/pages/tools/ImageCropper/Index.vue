@@ -172,7 +172,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import { ElMessage } from 'element-plus'
 import Header from '@/components/Header.vue'
 import NeonCard from '@/components/NeonCard.vue'
@@ -204,6 +204,17 @@ const cropArea = ref<{
 const dragging = ref(false)
 const resizing = ref<string | null>(null)
 const dragStart = ref({ x: 0, y: 0 })
+const canvasRect = ref<DOMRect | null>(null)
+
+// 节流函数
+let mouseMoveTimer: number | null = null
+const throttleMouseMove = (callback: () => void) => {
+  if (mouseMoveTimer) return
+  mouseMoveTimer = requestAnimationFrame(() => {
+    callback()
+    mouseMoveTimer = null
+  })
+}
 
 // 计算裁剪区域样式
 const overlayStyle = computed(() => {
@@ -282,6 +293,13 @@ const drawCanvas = () => {
   canvas.value.height = height
   ctx.drawImage(img, 0, 0, width, height)
 
+  // 更新画布位置信息
+  nextTick(() => {
+    if (canvas.value) {
+      canvasRect.value = canvas.value.getBoundingClientRect()
+    }
+  })
+
   // 设置默认输出尺寸
   outputWidth.value = Math.round(width)
   outputHeight.value = Math.round(height)
@@ -321,60 +339,80 @@ const setAspectRatio = (ratio: string) => {
 
 // 开始拖拽
 const startDrag = (e: MouseEvent) => {
+  if (!cropArea.value || !canvas.value) return
+  
   dragging.value = true
+  const rect = canvas.value.getBoundingClientRect()
+  canvasRect.value = rect
+  
+  // 计算鼠标相对于裁剪区域左上角的偏移
   dragStart.value = {
-    x: e.clientX - (cropArea.value?.x || 0),
-    y: e.clientY - (cropArea.value?.y || 0),
+    x: e.clientX - rect.left - cropArea.value.x,
+    y: e.clientY - rect.top - cropArea.value.y,
   }
 }
 
 // 开始调整大小
 const startResize = (handle: string) => {
+  if (!canvas.value) return
   resizing.value = handle
+  const rect = canvas.value.getBoundingClientRect()
+  canvasRect.value = rect
 }
 
 // 鼠标移动
 const handleMouseMove = (e: MouseEvent) => {
   if (!cropArea.value || !canvas.value) return
 
-  if (dragging.value) {
-    const newX = e.clientX - dragStart.value.x
-    const newY = e.clientY - dragStart.value.y
+  throttleMouseMove(() => {
+    if (!cropArea.value || !canvas.value) return
 
-    cropArea.value.x = Math.max(0, Math.min(newX, canvas.value.width - cropArea.value.width))
-    cropArea.value.y = Math.max(0, Math.min(newY, canvas.value.height - cropArea.value.height))
-  } else if (resizing.value) {
-    const rect = canvas.value.getBoundingClientRect()
-    const mouseX = e.clientX - rect.left
-    const mouseY = e.clientY - rect.top
+    if (dragging.value) {
+      // 使用缓存的画布位置信息
+      const rect = canvasRect.value || canvas.value.getBoundingClientRect()
+      const mouseX = e.clientX - rect.left
+      const mouseY = e.clientY - rect.top
 
-    if (resizing.value.includes('e')) {
-      cropArea.value.width = Math.max(50, mouseX - cropArea.value.x)
-    }
-    if (resizing.value.includes('s')) {
-      cropArea.value.height = Math.max(50, mouseY - cropArea.value.y)
-    }
-    if (resizing.value.includes('w')) {
-      const newWidth = cropArea.value.x + cropArea.value.width - mouseX
-      if (newWidth >= 50) {
-        cropArea.value.x = mouseX
-        cropArea.value.width = newWidth
+      // 计算新位置（考虑拖拽偏移）
+      const newX = mouseX - dragStart.value.x
+      const newY = mouseY - dragStart.value.y
+
+      // 限制在画布范围内
+      cropArea.value.x = Math.max(0, Math.min(newX, canvas.value.width - cropArea.value.width))
+      cropArea.value.y = Math.max(0, Math.min(newY, canvas.value.height - cropArea.value.height))
+    } else if (resizing.value) {
+      const rect = canvasRect.value || canvas.value.getBoundingClientRect()
+      const mouseX = e.clientX - rect.left
+      const mouseY = e.clientY - rect.top
+
+      if (resizing.value.includes('e')) {
+        cropArea.value.width = Math.max(50, Math.min(mouseX - cropArea.value.x, canvas.value.width - cropArea.value.x))
       }
-    }
-    if (resizing.value.includes('n')) {
-      const newHeight = cropArea.value.y + cropArea.value.height - mouseY
-      if (newHeight >= 50) {
-        cropArea.value.y = mouseY
-        cropArea.value.height = newHeight
+      if (resizing.value.includes('s')) {
+        cropArea.value.height = Math.max(50, Math.min(mouseY - cropArea.value.y, canvas.value.height - cropArea.value.y))
       }
-    }
+      if (resizing.value.includes('w')) {
+        const newWidth = cropArea.value.x + cropArea.value.width - mouseX
+        if (newWidth >= 50) {
+          cropArea.value.x = Math.max(0, mouseX)
+          cropArea.value.width = newWidth
+        }
+      }
+      if (resizing.value.includes('n')) {
+        const newHeight = cropArea.value.y + cropArea.value.height - mouseY
+        if (newHeight >= 50) {
+          cropArea.value.y = Math.max(0, mouseY)
+          cropArea.value.height = newHeight
+        }
+      }
 
-    // 限制在画布内
-    cropArea.value.x = Math.max(0, cropArea.value.x)
-    cropArea.value.y = Math.max(0, cropArea.value.y)
-    cropArea.value.width = Math.min(cropArea.value.width, canvas.value.width - cropArea.value.x)
-    cropArea.value.height = Math.min(cropArea.value.height, canvas.value.height - cropArea.value.y)
-  }
+      // 限制在画布内
+      cropArea.value.x = Math.max(0, Math.min(cropArea.value.x, canvas.value.width - 50))
+      cropArea.value.y = Math.max(0, Math.min(cropArea.value.y, canvas.value.height - 50))
+      cropArea.value.width = Math.min(cropArea.value.width, canvas.value.width - cropArea.value.x)
+      cropArea.value.height = Math.min(cropArea.value.height, canvas.value.height - cropArea.value.y)
+    }
+  })
 }
 
 // 鼠标释放
@@ -384,8 +422,14 @@ const handleMouseUp = () => {
 }
 
 // 裁剪图片
-const handleCrop = () => {
+const handleCrop = async () => {
   if (!canvas.value || !cropArea.value || !currentImage.value) return
+
+  // 验证输出尺寸
+  if (outputWidth.value <= 0 || outputHeight.value <= 0) {
+    ElMessage.warning('输出尺寸必须大于0')
+    return
+  }
 
   isCropping.value = true
 
@@ -399,10 +443,15 @@ const handleCrop = () => {
     const scaleY = currentImage.value.height / canvas.value.height
 
     // 裁剪原图坐标
-    const sourceX = cropArea.value.x * scaleX
-    const sourceY = cropArea.value.y * scaleY
-    const sourceWidth = cropArea.value.width * scaleX
-    const sourceHeight = cropArea.value.height * scaleY
+    const sourceX = Math.max(0, cropArea.value.x * scaleX)
+    const sourceY = Math.max(0, cropArea.value.y * scaleY)
+    const sourceWidth = Math.min(cropArea.value.width * scaleX, currentImage.value.width - sourceX)
+    const sourceHeight = Math.min(cropArea.value.height * scaleY, currentImage.value.height - sourceY)
+
+    // 验证裁剪区域
+    if (sourceWidth <= 0 || sourceHeight <= 0) {
+      throw new Error('裁剪区域无效')
+    }
 
     // 设置输出尺寸
     tempCanvas.width = outputWidth.value
@@ -421,20 +470,41 @@ const handleCrop = () => {
       outputHeight.value
     )
 
-    // 转换为 Blob
-    tempCanvas.toBlob((blob) => {
-      if (blob) {
-        croppedImage.value = URL.createObjectURL(blob)
-        croppedWidth.value = outputWidth.value
-        croppedHeight.value = outputHeight.value
-        croppedSize.value = blob.size
-        ElMessage.success('裁剪完成')
+    // 转换为 Blob（使用 Promise 包装）
+    const blob = await new Promise<Blob | null>((resolve, reject) => {
+      try {
+        tempCanvas.toBlob(
+          (blob) => {
+            if (blob) {
+              resolve(blob)
+            } else {
+              reject(new Error('转换为 Blob 失败'))
+            }
+          },
+          'image/png',
+          0.95
+        )
+      } catch (error) {
+        reject(error)
       }
-      isCropping.value = false
-    }, 'image/png')
+    })
+
+    if (blob) {
+      // 释放旧的 URL
+      if (croppedImage.value) {
+        URL.revokeObjectURL(croppedImage.value)
+      }
+      
+      croppedImage.value = URL.createObjectURL(blob)
+      croppedWidth.value = outputWidth.value
+      croppedHeight.value = outputHeight.value
+      croppedSize.value = blob.size
+      ElMessage.success('裁剪完成')
+    }
   } catch (error) {
     console.error('裁剪失败:', error)
-    ElMessage.error('裁剪失败')
+    ElMessage.error('裁剪失败: ' + (error instanceof Error ? error.message : '未知错误'))
+  } finally {
     isCropping.value = false
   }
 }
@@ -463,9 +533,18 @@ const resetImage = () => {
 
 // 清空图片
 const clearImage = () => {
+  // 释放 URL 对象
+  if (croppedImage.value) {
+    URL.revokeObjectURL(croppedImage.value)
+  }
+  
   currentImage.value = null
   cropArea.value = null
   croppedImage.value = ''
+  canvasRect.value = null
+  dragging.value = false
+  resizing.value = null
+  isCropping.value = false
   ElMessage.info('已清空')
 }
 
@@ -479,15 +558,25 @@ const formatFileSize = (bytes: number): string => {
 }
 
 // 监听输出尺寸变化
+let isUpdating = false
 watch([outputWidth, outputHeight], ([newWidth, newHeight], [oldWidth, oldHeight]) => {
-  if (!keepAspectRatio.value) return
+  if (!keepAspectRatio.value || isUpdating) return
 
-  if (newWidth !== oldWidth && oldWidth > 0) {
+  // 防止循环更新
+  if (newWidth !== oldWidth && oldWidth > 0 && newWidth > 0) {
+    isUpdating = true
     const ratio = newWidth / oldWidth
-    outputHeight.value = Math.round(oldHeight * ratio)
-  } else if (newHeight !== oldHeight && oldHeight > 0) {
+    outputHeight.value = Math.max(1, Math.round(oldHeight * ratio))
+    nextTick(() => {
+      isUpdating = false
+    })
+  } else if (newHeight !== oldHeight && oldHeight > 0 && newHeight > 0) {
+    isUpdating = true
     const ratio = newHeight / oldHeight
-    outputWidth.value = Math.round(oldWidth * ratio)
+    outputWidth.value = Math.max(1, Math.round(oldWidth * ratio))
+    nextTick(() => {
+      isUpdating = false
+    })
   }
 })
 
@@ -499,6 +588,17 @@ onMounted(() => {
 onUnmounted(() => {
   document.removeEventListener('mousemove', handleMouseMove)
   document.removeEventListener('mouseup', handleMouseUp)
+  
+  // 清理定时器
+  if (mouseMoveTimer) {
+    cancelAnimationFrame(mouseMoveTimer)
+    mouseMoveTimer = null
+  }
+  
+  // 释放 URL 对象
+  if (croppedImage.value) {
+    URL.revokeObjectURL(croppedImage.value)
+  }
 })
 </script>
 

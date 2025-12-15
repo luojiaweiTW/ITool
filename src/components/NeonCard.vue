@@ -24,9 +24,11 @@
       </div>
       <slot name="header" />
     </div>
+    
     <div class="neon-card__body">
       <slot />
     </div>
+    
     <div v-if="$slots.footer" class="neon-card__footer">
       <slot name="footer" />
     </div>
@@ -55,89 +57,15 @@ withDefaults(defineProps<Props>(), {
   position: relative;
   display: flex;
   flex-direction: column;
-  background: linear-gradient(135deg, var(--color-panel) 0%, var(--color-panel-light) 100%);
-  border: 2px solid var(--color-border-light);
-  border-radius: var(--radius-lg);
-  box-shadow: inset 0 0 40px rgba(33, 230, 255, 0.06), 0 4px 20px rgba(0, 0, 0, 0.3);
-  overflow: hidden;
-  transition: all var(--transition-base) var(--transition-timing);
+  /* 修复：使用深色背景，而不是白色半透明，避免发灰 */
+  background: rgba(30, 27, 46, 0.6); 
   backdrop-filter: blur(12px);
-  animation: cardGlow 4s ease-in-out infinite;
-}
-
-/* 卡片边框发光动画 */
-@keyframes cardGlow {
-  0%, 100% {
-    box-shadow: 
-      inset 0 0 40px rgba(33, 230, 255, 0.06),
-      0 4px 20px rgba(0, 0, 0, 0.3),
-      0 0 5px rgba(33, 230, 255, 0.2);
-  }
-  50% {
-    box-shadow: 
-      inset 0 0 50px rgba(33, 230, 255, 0.1),
-      0 4px 20px rgba(0, 0, 0, 0.3),
-      0 0 10px rgba(33, 230, 255, 0.4),
-      0 0 20px rgba(155, 92, 255, 0.2);
-  }
-}
-
-/* 卡片扫描线效果 */
-.neon-card::after {
-  content: '';
-  position: absolute;
-  top: -100%;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  background: linear-gradient(
-    180deg,
-    transparent 0%,
-    rgba(33, 230, 255, 0.1) 50%,
-    transparent 100%
-  );
-  animation: cardScan 6s linear infinite;
-  pointer-events: none;
-  z-index: 10;
-}
-
-@keyframes cardScan {
-  0% {
-    top: -100%;
-  }
-  100% {
-    top: 100%;
-  }
-}
-
-/* 悬停增强效果 */
-.neon-card:hover {
-  background: linear-gradient(135deg, var(--color-panel-light) 0%, var(--color-panel-hover) 100%);
-  border-color: var(--neon-cyan-lighter);
-  box-shadow: 
-    inset 0 0 50px rgba(33, 230, 255, 0.10),
-    0 6px 24px rgba(0, 0, 0, 0.35),
-    0 0 15px rgba(33, 230, 255, 0.5),
-    0 0 30px rgba(155, 92, 255, 0.3);
-  animation: cardGlowStrong 2s ease-in-out infinite;
-}
-
-@keyframes cardGlowStrong {
-  0%, 100% {
-    box-shadow: 
-      inset 0 0 50px rgba(33, 230, 255, 0.10),
-      0 6px 24px rgba(0, 0, 0, 0.35),
-      0 0 15px rgba(33, 230, 255, 0.5),
-      0 0 30px rgba(155, 92, 255, 0.3);
-  }
-  50% {
-    box-shadow: 
-      inset 0 0 60px rgba(33, 230, 255, 0.15),
-      0 6px 24px rgba(0, 0, 0, 0.35),
-      0 0 20px rgba(33, 230, 255, 0.7),
-      0 0 40px rgba(155, 92, 255, 0.5),
-      0 0 60px rgba(255, 42, 161, 0.3);
-  }
+  /* 修复：边框带一点紫色调 */
+  border: 1px solid rgba(120, 110, 160, 0.2); 
+  border-radius: 12px;
+  overflow: hidden;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
 }
 
 .neon-card--hoverable {
@@ -146,108 +74,56 @@ withDefaults(defineProps<Props>(), {
 
 .neon-card--hoverable:hover {
   transform: translateY(-2px);
-  box-shadow: var(--shadow-lg);
-  border-color: var(--neon-cyan);
+  /* 悬停时稍微亮一点，带青色倾向 */
+  background: rgba(40, 35, 60, 0.8);
+  border-color: rgba(33, 230, 255, 0.3);
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.3), 0 0 15px rgba(33, 230, 255, 0.1);
 }
 
-/* ========== 紧凑模式 ========== */
-.neon-card--compact .neon-card__header {
-  padding: var(--spacing-md) var(--spacing-lg);
-}
-
-.neon-card--compact .neon-card__body {
-  padding: var(--spacing-md) var(--spacing-lg);
-}
-
+/* 紧凑模式 */
+.neon-card--compact .neon-card__header,
+.neon-card--compact .neon-card__body,
 .neon-card--compact .neon-card__footer {
-  padding: var(--spacing-md) var(--spacing-lg);
+  padding: 12px 16px;
 }
 
-/* ========== 变体样式 ========== */
-.neon-card--primary {
-  border-color: var(--neon-cyan);
-}
+/* 变体样式 - 左侧细条 */
+.neon-card--primary { border-left: 3px solid var(--neon-cyan); }
+.neon-card--success { border-left: 3px solid var(--neon-lime); }
+.neon-card--warning { border-left: 3px solid var(--neon-yellow); }
+.neon-card--danger  { border-left: 3px solid var(--neon-pink); }
+.neon-card--info    { border-left: 3px solid var(--neon-purple); }
 
-.neon-card--primary .neon-card__header {
-  border-bottom-color: var(--neon-cyan);
-}
-
-.neon-card--success {
-  border-color: var(--neon-lime);
-}
-
-.neon-card--success .neon-card__header {
-  border-bottom-color: var(--neon-lime);
-}
-
-.neon-card--warning {
-  border-color: var(--neon-yellow);
-}
-
-.neon-card--warning .neon-card__header {
-  border-bottom-color: var(--neon-yellow);
-}
-
-.neon-card--danger {
-  border-color: var(--neon-pink);
-}
-
-.neon-card--danger .neon-card__header {
-  border-bottom-color: var(--neon-pink);
-}
-
-.neon-card--info {
-  border-color: var(--neon-purple);
-}
-
-.neon-card--info .neon-card__header {
-  border-bottom-color: var(--neon-purple);
-}
-
-/* ========== 卡片头部（浅色优化）========== */
+/* Header */
 .neon-card__header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: var(--spacing-lg) var(--spacing-xl);
-  border-bottom: 1px solid var(--color-border-light);  /* 浅色边框 */
-  background: linear-gradient(135deg, rgba(33, 230, 255, 0.08) 0%, rgba(155, 92, 255, 0.04) 100%);  /* 浅色渐变 */
+  padding: 16px 24px;
+  border-bottom: 1px solid rgba(120, 110, 160, 0.1);
+  background: rgba(30, 27, 46, 0.3);
 }
 
 .neon-card__header-content {
   display: flex;
   align-items: center;
-  gap: var(--spacing-md);
+  gap: 12px;
   flex: 1;
+  min-width: 0;
 }
 
 .neon-card__icon {
-  display: inline-flex;
+  display: flex;
   align-items: center;
   justify-content: center;
+  font-size: 18px;
+  color: var(--neon-cyan);
   width: 32px;
   height: 32px;
-  font-size: 1.5em;
-  color: var(--neon-cyan-light);
-  background: rgba(33, 230, 255, 0.15);
-  border: 1px solid var(--neon-cyan-lighter);
-  border-radius: var(--radius-sm);
-  box-shadow: inset 0 0 15px rgba(33, 230, 255, 0.20), 0 0 8px rgba(33, 230, 255, 0.3);
-  animation: iconGlow 2s ease-in-out infinite;
-}
-
-@keyframes iconGlow {
-  0%, 100% {
-    box-shadow: 
-      inset 0 0 15px rgba(33, 230, 255, 0.20),
-      0 0 8px rgba(33, 230, 255, 0.3);
-  }
-  50% {
-    box-shadow: 
-      inset 0 0 20px rgba(33, 230, 255, 0.30),
-      0 0 12px rgba(33, 230, 255, 0.5),
-      0 0 20px rgba(155, 92, 255, 0.3);
-  }
+  /* 图标背景改为深色半透明 */
+  background: rgba(33, 230, 255, 0.1);
+  border-radius: 8px;
+  border: 1px solid rgba(33, 230, 255, 0.2);
 }
 
 .neon-card__header-text {
@@ -257,70 +133,32 @@ withDefaults(defineProps<Props>(), {
 
 .neon-card__title {
   margin: 0;
-  font-family: var(--font-family-display);
-  font-size: var(--font-size-lg);
-  font-weight: var(--font-weight-bold);
-  line-height: var(--line-height-tight);
+  font-size: 15px;
+  font-weight: 600;
   color: var(--color-text);
+  line-height: 1.4;
 }
 
 .neon-card__subtitle {
-  margin: var(--spacing-xs) 0 0;
-  font-size: var(--font-size-sm);
-  line-height: var(--line-height-normal);
+  margin: 2px 0 0;
+  font-size: 12px;
   color: var(--color-muted);
 }
 
 .neon-card__extra {
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-sm);
-  margin-left: var(--spacing-md);
+  margin-left: 16px;
 }
 
-/* ========== 卡片主体 ========== */
+/* Body */
 .neon-card__body {
   flex: 1;
-  padding: var(--spacing-xl);
+  padding: 24px;
 }
 
-/* ========== 卡片底部（浅色优化）========== */
+/* Footer */
 .neon-card__footer {
-  padding: var(--spacing-lg) var(--spacing-xl);
-  border-top: 1px solid var(--color-border-light);  /* 浅色边框 */
-  background: linear-gradient(135deg, rgba(33, 230, 255, 0.05) 0%, rgba(155, 92, 255, 0.03) 100%);  /* 浅色渐变 */
-}
-
-/* ========== 几何点缀装饰 ========== */
-.neon-card__header::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 4px;
-  height: 100%;
-  background: linear-gradient(180deg, var(--neon-cyan) 0%, transparent 100%);
-  opacity: 0.6;
-}
-
-.neon-card--primary .neon-card__header::before {
-  background: linear-gradient(180deg, var(--neon-cyan) 0%, transparent 100%);
-}
-
-.neon-card--success .neon-card__header::before {
-  background: linear-gradient(180deg, var(--neon-lime) 0%, transparent 100%);
-}
-
-.neon-card--warning .neon-card__header::before {
-  background: linear-gradient(180deg, var(--neon-yellow) 0%, transparent 100%);
-}
-
-.neon-card--danger .neon-card__header::before {
-  background: linear-gradient(180deg, var(--neon-pink) 0%, transparent 100%);
-}
-
-.neon-card--info .neon-card__header::before {
-  background: linear-gradient(180deg, var(--neon-purple) 0%, transparent 100%);
+  padding: 16px 24px;
+  border-top: 1px solid rgba(120, 110, 160, 0.1);
+  background: rgba(30, 27, 46, 0.3);
 }
 </style>
-

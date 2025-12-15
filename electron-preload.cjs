@@ -118,6 +118,15 @@ contextBridge.exposeInMainWorld('electron', {
     ipcRenderer.removeListener(channel, callback)
   },
   
+  // 英语学习工具
+  english: {
+    selectDataset: () => ipcRenderer.invoke('english:selectDataset'),
+    resolvePath: (basePath, ...segments) => ipcRenderer.invoke('english:resolvePath', basePath, ...segments),
+    pathInfo: (absolutePath) => ipcRenderer.invoke('english:pathInfo', absolutePath),
+    readFile: (absolutePath, encoding) => ipcRenderer.invoke('english:readFile', absolutePath, encoding),
+    getFileUrl: (absolutePath) => ipcRenderer.invoke('english:getFileUrl', absolutePath),
+  },
+  
   // 通用 IPC 调用（用于 IP 扫描器等工具）
   invoke: (channel, ...args) => ipcRenderer.invoke(channel, ...args)
 })

@@ -417,6 +417,52 @@ function setupIPC() {
       return { success: false, error: error.message }
     }
   })
+
+  // English Module Handlers
+  ipcMain.handle('english-select-dataset', async () => {
+    const result = await dialog.showOpenDialog(mainWindow!, {
+      properties: ['openDirectory'],
+      title: '选择新概念英语数据目录',
+    })
+    if (result.canceled || result.filePaths.length === 0) {
+      return { success: false, canceled: true }
+    }
+    return { success: true, path: result.filePaths[0] }
+  })
+
+  ipcMain.handle('english-resolve-path', async (_, basePath: string, ...segments: string[]) => {
+    try {
+      const resolvedPath = join(basePath, ...segments)
+      return { success: true, path: resolvedPath }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  ipcMain.handle('english-path-info', async (_, absolutePath: string) => {
+    try {
+      const stats = await fs.stat(absolutePath)
+      return {
+        exists: true,
+        isDirectory: stats.isDirectory(),
+        isFile: stats.isFile(),
+        size: stats.size,
+        mtime: stats.mtimeMs
+      }
+    } catch (error) {
+      return { exists: false, error: 'File not found or inaccessible' }
+    }
+  })
+
+  ipcMain.handle('english-get-file-url', async (_, absolutePath: string) => {
+    try {
+      // Use standard URL construction to handle escaping correctly
+      const urlObj = new URL(`file:///${absolutePath.replace(/\\/g, '/')}`)
+      return { success: true, url: urlObj.href }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
 }
 
 /**

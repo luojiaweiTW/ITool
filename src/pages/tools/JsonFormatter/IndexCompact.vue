@@ -57,17 +57,36 @@
         </template>
 
         <div class="editor-wrapper">
-          <textarea
-            v-model="inputJson"
-            class="compact-textarea"
-            :class="{ 'has-error': validationError }"
-            placeholder="粘贴或输入 JSON/YAML 数据..."
-            spellcheck="false"
-            @input="handleInput"
-          />
+          <div class="editor-with-lines">
+            <div class="line-numbers" ref="inputLineNumbersRef">
+              <div
+                v-for="n in inputLineCount"
+                :key="n"
+                class="line-number"
+                :class="{ 'error-line': errorLine === n }"
+              >
+                {{ n }}
+              </div>
+            </div>
+            <textarea
+              ref="textareaRef"
+              v-model="inputJson"
+              class="compact-textarea"
+              :class="{ 'has-error': validationError }"
+              placeholder="粘贴或输入 JSON/YAML 数据..."
+              spellcheck="false"
+              @input="handleInput"
+              @scroll="handleInputScroll"
+            />
+          </div>
           <div v-if="validationError" class="editor-error">
             <i class="i-mdi-alert-circle" />
-            {{ validationError }}
+            <div class="error-content">
+              <div class="error-message">{{ validationError.split('\n')[0] }}</div>
+              <div v-if="validationError.includes('\n')" class="error-details">
+                {{ validationError.split('\n').slice(1).join('\n') }}
+              </div>
+            </div>
           </div>
         </div>
       </CompactCard>
@@ -135,7 +154,18 @@
 
         <div class="editor-wrapper">
           <!-- 文本模式 -->
-          <pre v-if="viewMode === 'text'" class="compact-output"><code>{{ outputJson || '输出结果将显示在这里...' }}</code></pre>
+          <div v-if="viewMode === 'text'" class="editor-with-lines">
+            <div class="line-numbers" ref="outputLineNumbersRef">
+              <div
+                v-for="n in outputLineCount"
+                :key="n"
+                class="line-number"
+              >
+                {{ n }}
+              </div>
+            </div>
+            <pre ref="outputPreRef" class="compact-output" @scroll="handleOutputScroll"><code>{{ outputJson || '输出结果将显示在这里...' }}</code></pre>
+          </div>
           
           <!-- 树形模式 -->
           <div v-else class="json-tree-compact">
@@ -155,7 +185,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch, provide } from 'vue'
+import { ref, watch, provide, nextTick, computed } from 'vue'
 import { ElMessage } from 'element-plus'
 import * as yaml from 'js-yaml'
 import CompactCard from '@/components/CompactCard.vue'
@@ -167,21 +197,136 @@ import JsonTreeNode from './components/JsonTreeNode.vue'
 const inputJson = ref('')
 const outputJson = ref('')
 const validationError = ref('')
+const errorLine = ref<number | null>(null)
+const errorColumn = ref<number | null>(null)
+const errorPosition = ref<number | null>(null)
 const inputFormat = ref<'json' | 'yaml'>('json')
 const outputFormat = ref<'json' | 'yaml'>('json')
 const viewMode = ref<'text' | 'tree'>('text')
 const parsedData = ref<any>(null)
+const textareaRef = ref<HTMLTextAreaElement | null>(null)
+const inputLineNumbersRef = ref<HTMLDivElement | null>(null)
+const outputLineNumbersRef = ref<HTMLDivElement | null>(null)
+const outputPreRef = ref<HTMLPreElement | null>(null)
+
+// 计算行数
+const inputLineCount = computed(() => {
+  if (!inputJson.value) return 1
+  const lines = inputJson.value.split('\n')
+  // 如果最后一行不为空，也要显示行号
+  return Math.max(1, lines.length)
+})
+
+const outputLineCount = computed(() => {
+  if (!outputJson.value) return 1
+  const lines = outputJson.value.split('\n')
+  // 如果最后一行不为空，也要显示行号
+  return Math.max(1, lines.length)
+})
+
+// 同步滚动
+const handleInputScroll = () => {
+  if (textareaRef.value && inputLineNumbersRef.value) {
+    inputLineNumbersRef.value.scrollTop = textareaRef.value.scrollTop
+  }
+}
+
+const handleOutputScroll = () => {
+  if (outputPreRef.value && outputLineNumbersRef.value) {
+    outputLineNumbersRef.value.scrollTop = outputPreRef.value.scrollTop
+  }
+}
 
 const handleInput = () => {
   validationError.value = ''
+  errorLine.value = null
+  errorColumn.value = null
+  errorPosition.value = null
+}
+
+// 解析 JSON 错误信息，提取位置和行数
+const parseJsonError = (error: Error, jsonText: string) => {
+  const message = error.message || ''
+  let position: number | null = null
+  let line: number | null = null
+  let column: number | null = null
+
+  // 尝试从错误信息中提取位置
+  // 格式: "Unexpected token X in JSON at position Y"
+  const positionMatch = message.match(/position\s+(\d+)/i)
+  if (positionMatch) {
+    position = parseInt(positionMatch[1], 10)
+  }
+
+  // 如果没有找到位置，尝试从堆栈信息中提取
+  if (position === null && error.stack) {
+    const stackMatch = error.stack.match(/position\s+(\d+)/i)
+    if (stackMatch) {
+      position = parseInt(stackMatch[1], 10)
+    }
+  }
+
+  // 如果找到了位置，计算行数和列数
+  if (position !== null && position >= 0 && position <= jsonText.length) {
+    const textBeforePosition = jsonText.substring(0, position)
+    const lines = textBeforePosition.split('\n')
+    line = lines.length
+    column = lines[lines.length - 1].length + 1 // +1 因为列数从1开始
+  } else {
+    // 如果找不到位置，尝试查找常见的错误位置
+    // 比如缺少引号、逗号等
+    const commonErrors = [
+      { pattern: /Unexpected token.*in JSON/i, search: /[^\\]"/g },
+      { pattern: /Unexpected end/i, search: /$/ }
+    ]
+    
+    for (const err of commonErrors) {
+      if (err.pattern.test(message)) {
+        // 尝试找到最后一个有效的 JSON 结构
+        const lastBrace = jsonText.lastIndexOf('}')
+        const lastBracket = jsonText.lastIndexOf(']')
+        const lastValid = Math.max(lastBrace, lastBracket)
+        if (lastValid > 0) {
+          position = lastValid + 1
+          const textBeforePosition = jsonText.substring(0, position)
+          const lines = textBeforePosition.split('\n')
+          line = lines.length
+          column = lines[lines.length - 1].length + 1
+        }
+        break
+      }
+    }
+  }
+
+  return { position, line, column, message }
 }
 
 // 解析输入（支持JSON和YAML）
 const parseInput = () => {
   if (inputFormat.value === 'json') {
-    return JSON.parse(inputJson.value)
+    try {
+      return JSON.parse(inputJson.value)
+    } catch (error: any) {
+      // 解析错误信息
+      const errorInfo = parseJsonError(error, inputJson.value)
+      errorLine.value = errorInfo.line
+      errorColumn.value = errorInfo.column
+      errorPosition.value = errorInfo.position
+      throw error
+    }
   } else {
-    return yaml.load(inputJson.value)
+    try {
+      return yaml.load(inputJson.value)
+    } catch (error: any) {
+      // YAML 错误处理
+      const message = error.message || ''
+      // YAML 错误通常包含行号
+      const lineMatch = message.match(/line\s+(\d+)/i)
+      if (lineMatch) {
+        errorLine.value = parseInt(lineMatch[1], 10)
+      }
+      throw error
+    }
   }
 }
 
@@ -199,10 +344,29 @@ const handleFormat = () => {
     const parsed = parseInput()
     outputJson.value = formatOutput(parsed, false)
     validationError.value = ''
+    errorLine.value = null
+    errorColumn.value = null
+    errorPosition.value = null
     ElMessage.success(`格式化成功 (${inputFormat.value.toUpperCase()} → ${outputFormat.value.toUpperCase()})`)
   } catch (error: any) {
-    validationError.value = `${inputFormat.value.toUpperCase()} 格式错误: ${error.message}`
+    // parseInput 已经解析了错误信息并设置了 errorLine、errorColumn、errorPosition
+    let errorMsg = `${inputFormat.value.toUpperCase()} 格式错误: ${error.message}`
+    
+    if (errorLine.value !== null) {
+      errorMsg += `\n位置: 第 ${errorLine.value} 行`
+      if (errorColumn.value !== null) {
+        errorMsg += `，第 ${errorColumn.value} 列`
+      }
+      if (errorPosition.value !== null) {
+        errorMsg += ` (字符位置: ${errorPosition.value})`
+      }
+    }
+    
+    validationError.value = errorMsg
     ElMessage.error(`${inputFormat.value.toUpperCase()} 格式错误`)
+    
+    // 滚动到错误行
+    scrollToErrorLine()
   }
 }
 
@@ -211,10 +375,29 @@ const handleCompress = () => {
     const parsed = parseInput()
     outputJson.value = formatOutput(parsed, true)
     validationError.value = ''
+    errorLine.value = null
+    errorColumn.value = null
+    errorPosition.value = null
     ElMessage.success('压缩成功')
   } catch (error: any) {
-    validationError.value = `${inputFormat.value.toUpperCase()} 格式错误: ${error.message}`
+    // parseInput 已经解析了错误信息并设置了 errorLine、errorColumn、errorPosition
+    let errorMsg = `${inputFormat.value.toUpperCase()} 格式错误: ${error.message}`
+    
+    if (errorLine.value !== null) {
+      errorMsg += `\n位置: 第 ${errorLine.value} 行`
+      if (errorColumn.value !== null) {
+        errorMsg += `，第 ${errorColumn.value} 列`
+      }
+      if (errorPosition.value !== null) {
+        errorMsg += ` (字符位置: ${errorPosition.value})`
+      }
+    }
+    
+    validationError.value = errorMsg
     ElMessage.error(`${inputFormat.value.toUpperCase()} 格式错误`)
+    
+    // 滚动到错误行
+    scrollToErrorLine()
   }
 }
 
@@ -222,10 +405,29 @@ const handleValidate = () => {
   try {
     parseInput()
     validationError.value = ''
+    errorLine.value = null
+    errorColumn.value = null
+    errorPosition.value = null
     ElMessage.success(`${inputFormat.value.toUpperCase()} 格式正确`)
   } catch (error: any) {
-    validationError.value = `${inputFormat.value.toUpperCase()} 格式错误: ${error.message}`
+    // parseInput 已经解析了错误信息并设置了 errorLine、errorColumn、errorPosition
+    let errorMsg = `${inputFormat.value.toUpperCase()} 格式错误: ${error.message}`
+    
+    if (errorLine.value !== null) {
+      errorMsg += `\n位置: 第 ${errorLine.value} 行`
+      if (errorColumn.value !== null) {
+        errorMsg += `，第 ${errorColumn.value} 列`
+      }
+      if (errorPosition.value !== null) {
+        errorMsg += ` (字符位置: ${errorPosition.value})`
+      }
+    }
+    
+    validationError.value = errorMsg
     ElMessage.error(`${inputFormat.value.toUpperCase()} 格式错误`)
+    
+    // 滚动到错误行
+    scrollToErrorLine()
   }
 }
 
@@ -241,10 +443,40 @@ const handleOutputFormatChange = () => {
   }
 }
 
+// 滚动到错误行
+const scrollToErrorLine = () => {
+  if (errorLine.value !== null && textareaRef.value) {
+    nextTick(() => {
+      const textarea = textareaRef.value
+      if (!textarea) return
+      
+      const lines = inputJson.value.split('\n')
+      let position = 0
+      
+      // 计算错误行的起始位置
+      for (let i = 0; i < errorLine.value! - 1 && i < lines.length; i++) {
+        position += lines[i].length + 1 // +1 是换行符
+      }
+      
+      // 设置光标位置并滚动
+      textarea.setSelectionRange(position, position)
+      textarea.focus()
+      
+      // 滚动到可见区域
+      const lineHeight = parseInt(getComputedStyle(textarea).lineHeight) || 20
+      const scrollTop = (errorLine.value! - 1) * lineHeight - textarea.clientHeight / 2
+      textarea.scrollTop = Math.max(0, scrollTop)
+    })
+  }
+}
+
 const handleClear = () => {
   inputJson.value = ''
   outputJson.value = ''
   validationError.value = ''
+  errorLine.value = null
+  errorColumn.value = null
+  errorPosition.value = null
   ElMessage.success('已清空')
 }
 
@@ -392,26 +624,92 @@ watch(inputJson, () => {
   position: relative;
 }
 
+/* 带行号的编辑器容器 */
+.editor-with-lines {
+  flex: 1;
+  display: flex;
+  position: relative;
+  min-height: 0;
+  overflow: hidden;
+  height: 100%;
+}
+
+/* 行号区域 */
+.line-numbers {
+  flex-shrink: 0;
+  width: 50px;
+  padding: 10px 8px 10px 10px;
+  background: rgba(0, 0, 0, 0.4);
+  border-right: 1px solid rgba(33, 230, 255, 0.2);
+  color: rgba(255, 255, 255, 0.5);
+  font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+  font-size: 12px;
+  line-height: 1.6;
+  text-align: right;
+  user-select: none;
+  overflow-y: auto;
+  overflow-x: hidden;
+  height: 100%;
+  /* 确保行号区域可以显示所有行数，不受高度限制 */
+  max-height: none;
+}
+
+.line-number {
+  height: 19.2px; /* 与 line-height 1.6 * 12px 匹配，使用固定高度确保对齐 */
+  min-height: 19.2px;
+  padding-right: 8px;
+  transition: color 0.2s ease;
+  display: block;
+}
+
+.line-number.error-line {
+  color: rgb(239, 68, 68);
+  font-weight: 600;
+  background: rgba(239, 68, 68, 0.1);
+}
+
+/* 行号滚动条 */
+.line-numbers::-webkit-scrollbar {
+  width: 4px;
+}
+
+.line-numbers::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.line-numbers::-webkit-scrollbar-thumb {
+  background: rgba(33, 230, 255, 0.3);
+  border-radius: 2px;
+}
+
+.line-numbers::-webkit-scrollbar-thumb:hover {
+  background: rgba(33, 230, 255, 0.5);
+}
+
 /* 紧凑文本域 */
 .compact-textarea {
   flex: 1;
   width: 100%;
   padding: 10px;
-  background: rgba(0, 0, 0, 0.3);
+  padding-left: 8px;
+  background: rgba(0, 0, 0, 0.5);
   border: 1px solid rgba(33, 230, 255, 0.2);
-  border-radius: 4px;
-  color: rgba(255, 255, 255, 0.9);
+  border-left: none;
+  border-radius: 0 4px 4px 0;
+  color: rgba(255, 255, 255, 0.95);
   font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
   font-size: 12px;
   line-height: 1.6;
   resize: none;
   outline: none;
   transition: all 0.25s ease;
+  overflow-y: auto;
+  overflow-x: auto;
 }
 
 .compact-textarea:focus {
   border-color: rgba(33, 230, 255, 0.4);
-  background: rgba(0, 0, 0, 0.4);
+  background: rgba(0, 0, 0, 0.6);
   box-shadow: 0 0 0 2px rgba(33, 230, 255, 0.1);
 }
 
@@ -430,23 +728,48 @@ watch(inputJson, () => {
   bottom: 8px;
   left: 8px;
   right: 8px;
-  padding: 6px 10px;
+  padding: 8px 12px;
   background: rgba(239, 68, 68, 0.15);
   border: 1px solid rgba(239, 68, 68, 0.3);
   border-radius: 4px;
   color: rgb(239, 68, 68);
   font-size: 11px;
   display: flex;
-  align-items: center;
-  gap: 6px;
-  max-height: 80px;
+  align-items: flex-start;
+  gap: 8px;
+  max-height: 120px;
   overflow-y: auto;
   backdrop-filter: blur(10px);
+  z-index: 10;
 }
 
 .editor-error i {
-  font-size: 13px;
+  font-size: 14px;
   flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.error-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.error-message {
+  font-weight: 500;
+  line-height: 1.4;
+  word-break: break-word;
+}
+
+.error-details {
+  font-size: 10px;
+  color: rgba(239, 68, 68, 0.8);
+  line-height: 1.5;
+  padding-top: 4px;
+  border-top: 1px solid rgba(239, 68, 68, 0.2);
+  white-space: pre-wrap;
 }
 
 /* 紧凑输出 */
@@ -454,23 +777,28 @@ watch(inputJson, () => {
   flex: 1;
   margin: 0;
   padding: 10px;
-  background: rgba(0, 0, 0, 0.3);
+  padding-left: 8px;
+  background: rgba(0, 0, 0, 0.6);
   border: 1px solid rgba(33, 230, 255, 0.2);
-  border-radius: 4px;
-  overflow: auto;
+  border-left: none;
+  border-radius: 0 4px 4px 0;
+  overflow-y: auto;
+  overflow-x: auto;
   font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
   font-size: 12px;
   line-height: 1.6;
-  color: rgba(255, 255, 255, 0.85);
+  color: rgba(255, 255, 255, 0.95);
   white-space: pre-wrap;
   word-break: break-word;
+  height: 100%;
+  max-height: none;
 }
 
 .compact-output code {
   background: none;
   border: none;
   padding: 0;
-  color: inherit;
+  color: rgba(255, 255, 255, 0.95);
   font-family: inherit;
   font-size: inherit;
 }
@@ -511,24 +839,24 @@ watch(inputJson, () => {
 .compact-output::-webkit-scrollbar,
 .json-tree-compact::-webkit-scrollbar,
 .editor-error::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 8px;
+  height: 8px;
 }
 
 .compact-textarea::-webkit-scrollbar-track,
 .compact-output::-webkit-scrollbar-track,
 .json-tree-compact::-webkit-scrollbar-track,
 .editor-error::-webkit-scrollbar-track {
-  background: rgba(255, 255, 255, 0.03);
-  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 4px;
 }
 
 .compact-textarea::-webkit-scrollbar-thumb,
 .compact-output::-webkit-scrollbar-thumb,
 .json-tree-compact::-webkit-scrollbar-thumb,
 .editor-error::-webkit-scrollbar-thumb {
-  background: rgba(33, 230, 255, 0.4);
-  border-radius: 3px;
+  background: rgba(33, 230, 255, 0.5);
+  border-radius: 4px;
   transition: background 0.2s ease;
 }
 
@@ -536,7 +864,7 @@ watch(inputJson, () => {
 .compact-output::-webkit-scrollbar-thumb:hover,
 .json-tree-compact::-webkit-scrollbar-thumb:hover,
 .editor-error::-webkit-scrollbar-thumb:hover {
-  background: rgba(33, 230, 255, 0.6);
+  background: rgba(33, 230, 255, 0.8);
 }
 
 /* 响应式 */

@@ -60,9 +60,15 @@
         <!-- 右侧：输出区 -->
         <NeonCard class="url-encoder__panel" title="输出结果" compact>
           <template #extra>
-            <el-radio-group v-model="encodeType" size="small" @change="handleConvert">
-              <el-radio-button value="standard">标准编码</el-radio-button>
-              <el-radio-button value="component">组件编码</el-radio-button>
+            <el-radio-group
+              v-model="encodeType"
+              size="small"
+              @change="handleConvert"
+              :disabled="mode === 'decode'"
+            >
+              <el-radio-button :label="'standard'">整段 URL</el-radio-button>
+              <el-radio-button :label="'component'">单个组件</el-radio-button>
+              <el-radio-button :label="'smart'">智能参数</el-radio-button>
             </el-radio-group>
           </template>
 
@@ -126,12 +132,24 @@ import NeonButton from '@/components/NeonButton.vue'
 import NeonTextarea from '@/components/NeonTextarea.vue'
 
 type Mode = 'encode' | 'decode'
-type EncodeType = 'standard' | 'component'
+type EncodeType = 'standard' | 'component' | 'smart'
 
 const mode = ref<Mode>('encode')
-const encodeType = ref<EncodeType>('component')
+const encodeType = ref<EncodeType>('smart')
 const inputText = ref('')
 const outputText = ref('')
+
+const SMART_SAFE_REPLACEMENTS: Array<[RegExp, string]> = [
+  [/%3A/gi, ':'],
+  [/%2C/gi, ','],
+  [/%2F/gi, '/'],
+  [/%40/gi, '@'],
+  [/%3B/gi, ';'],
+  [/%2B/gi, '+'],
+  [/%2D/gi, '-'],
+  [/%5F/gi, '_'],
+  [/%2E/gi, '.']
+]
 
 const handleConvert = () => {
   if (!inputText.value.trim()) {
@@ -144,8 +162,10 @@ const handleConvert = () => {
       // 编码
       if (encodeType.value === 'standard') {
         outputText.value = encodeURI(inputText.value)
-      } else {
+      } else if (encodeType.value === 'component') {
         outputText.value = encodeURIComponent(inputText.value)
+      } else {
+        outputText.value = smartEncodeText(inputText.value)
       }
       ElMessage.success('编码成功')
     } else {
@@ -184,6 +204,48 @@ const copyExample = (text: string) => {
   }).catch(() => {
     ElMessage.error('复制失败')
   })
+}
+
+const smartEncodeText = (text: string) => {
+  const urlPattern = /(https?:\/\/[^\s"']+)/gi
+
+  return text.replace(urlPattern, (matchedUrl) => encodeUrlWithSmartStrategy(matchedUrl))
+}
+
+const encodeUrlWithSmartStrategy = (url: string) => {
+  try {
+    const [baseUrl, hash = ''] = url.split('#')
+    const [path, query = ''] = baseUrl.split('?')
+
+    if (!query) {
+      return url
+    }
+
+    const encodedQuery = query.split('&').map((segment) => {
+      if (!segment.trim()) return segment
+
+      const [key, ...rest] = segment.split('=')
+      if (rest.length === 0) {
+        return segment
+      }
+
+      const value = rest.join('=')
+      const encodedValue = preserveSafeCharacters(encodeURIComponent(value))
+      return `${key}=${encodedValue}`
+    }).join('&')
+
+    const rebuiltUrl = `${path}?${encodedQuery}${hash ? `#${hash}` : ''}`
+    return rebuiltUrl
+  } catch (error) {
+    console.warn('智能编码失败，回退原始 URL', error)
+    return url
+  }
+}
+
+const preserveSafeCharacters = (value: string) => {
+  return SMART_SAFE_REPLACEMENTS.reduce((result, [pattern, replacement]) => {
+    return result.replace(pattern, replacement)
+  }, value)
 }
 </script>
 

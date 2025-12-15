@@ -1,16 +1,29 @@
 import {
   defineConfig,
   presetUno,
-  presetAttributify,
   presetIcons,
   transformerDirectives,
   transformerVariantGroup,
 } from 'unocss'
 
 export default defineConfig({
+  // ⚡ 阻止无效的 CSS 类名生成（LRC 元数据格式等）
+  blocklist: [
+    /\[ti[:：]/,      // [ti:标题] 或 [ti：标题]
+    /\[ar[:：]/,      // [ar:艺术家] 或 [ar：艺术家]
+    /\[al[:：]/,      // [al:专辑] 或 [al：专辑]
+    /\[by[:：]/,      // [by:制作者] 或 [by：制作者]
+    /\[\d+[:：]\d/,   // [00:12.34] 或 [00：12.34] 时间格式
+    /\\!\\\[ti\\:/,   // 转义版本 \![ti:
+    /\\!\\\[ar\\:/,   // 转义版本 \![ar:
+    /\\!\\\[al\\:/,   // 转义版本 \![al:
+    /\\!\\\[by\\:/,   // 转义版本 \![by:
+    /\\\[.*[:：]/,    // 任何转义的方括号+冒号模式
+  ],
   presets: [
     presetUno(),
-    presetAttributify(),
+    // ⚡ 禁用 presetAttributify 避免误识别 LRC 元数据格式 [ti:标题] 等
+    // presetAttributify(),
     presetIcons({
       scale: 1.2,
       warn: true,

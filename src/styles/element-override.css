@@ -62,14 +62,14 @@
   box-shadow: 0 4px 12px rgba(255, 42, 161, 0.3) !important;
 }
 
-/* Default 按钮 - 玻璃态 */
+/* Default 按钮 - 深色背景，确保文字清晰 */
 .el-button--default {
-  background-color: rgba(255, 255, 255, 0.05) !important;
-  border-color: rgba(255, 255, 255, 0.1) !important;
-  color: var(--color-text) !important;
+  background-color: rgba(0, 0, 0, 0.3) !important;
+  border-color: rgba(255, 255, 255, 0.15) !important;
+  color: var(--color-text) !important; /* 使用主文字颜色，确保对比度 */
 }
 .el-button--default:hover {
-  background-color: rgba(255, 255, 255, 0.1) !important;
+  background-color: rgba(0, 0, 0, 0.5) !important;
   border-color: var(--neon-cyan) !important;
   color: var(--neon-cyan) !important;
 }
@@ -128,6 +128,49 @@
   background-color: rgba(0, 0, 0, 0.3) !important;
 }
 
+/* ========== 下拉选择框 ========== */
+/* 选择框输入框区域 - 深色背景，清晰文字 */
+.el-select .el-input__wrapper {
+  background-color: rgba(0, 0, 0, 0.2) !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1) !important;
+}
+
+.el-select .el-input__wrapper:hover {
+  background-color: rgba(0, 0, 0, 0.3) !important;
+  border-bottom-color: rgba(255, 255, 255, 0.3) !important;
+}
+
+.el-select .el-input__wrapper.is-focus {
+  background-color: rgba(0, 0, 0, 0.4) !important;
+  border-bottom-color: var(--neon-cyan) !important;
+  box-shadow: 0 1px 0 0 var(--neon-cyan) !important;
+}
+
+/* 选择框内部文字 */
+.el-select .el-input__inner {
+  color: var(--color-text) !important;
+}
+
+/* 选择框占位符 */
+.el-select .el-input__inner::placeholder {
+  color: var(--color-text-disabled) !important;
+}
+
+/* 下拉箭头图标 - 使用霓虹色 */
+.el-select .el-input__suffix .el-select__caret {
+  color: var(--color-text-secondary) !important;
+  transition: color 0.2s;
+}
+
+.el-select:hover .el-input__suffix .el-select__caret {
+  color: var(--neon-cyan) !important;
+}
+
+.el-select.is-focus .el-input__suffix .el-select__caret {
+  color: var(--neon-cyan) !important;
+}
+
 /* ========== 卡片 / 弹窗 / 下拉 ========== */
 /* 卡片组件 - 霓虹风格深色背景 */
 .el-card {
@@ -174,16 +217,18 @@
 }
 
 .el-dropdown-menu__item, .el-select-dropdown__item {
-  color: var(--color-text-secondary);
+  color: var(--color-text) !important; /* 使用主文字颜色，更清晰 */
+  background-color: transparent !important;
 }
 
 .el-dropdown-menu__item:hover, .el-select-dropdown__item.hover {
-  background-color: rgba(33, 230, 255, 0.1) !important;
+  background-color: rgba(33, 230, 255, 0.15) !important;
   color: var(--neon-cyan) !important;
 }
 
 .el-select-dropdown__item.selected {
   color: var(--neon-cyan) !important;
+  background-color: rgba(33, 230, 255, 0.1) !important;
   font-weight: 600;
 }
 
@@ -270,6 +315,43 @@
   backdrop-filter: blur(10px);
   border: 1px solid rgba(255, 255, 255, 0.1);
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+}
+
+/* ========== 复选框和单选框 ========== */
+.el-checkbox {
+  color: var(--color-text) !important;
+}
+
+.el-checkbox__input.is-checked .el-checkbox__inner {
+  background-color: var(--neon-cyan) !important;
+  border-color: var(--neon-cyan) !important;
+}
+
+.el-checkbox__inner {
+  background-color: rgba(0, 0, 0, 0.3) !important;
+  border-color: rgba(255, 255, 255, 0.2) !important;
+}
+
+.el-checkbox__label {
+  color: var(--color-text) !important;
+}
+
+.el-radio {
+  color: var(--color-text) !important;
+}
+
+.el-radio__input.is-checked .el-radio__inner {
+  border-color: var(--neon-cyan) !important;
+  background-color: var(--neon-cyan) !important;
+}
+
+.el-radio__inner {
+  background-color: rgba(0, 0, 0, 0.3) !important;
+  border-color: rgba(255, 255, 255, 0.2) !important;
+}
+
+.el-radio__label {
+  color: var(--color-text) !important;
 }
 
 /* 去除所有 focus 虚线 */

@@ -24,6 +24,48 @@ export interface HotRankResult {
   error?: string
 }
 
+export interface EnglishSelectResult {
+  success: boolean
+  path?: string
+  error?: string
+  canceled?: boolean
+}
+
+export interface EnglishResolveResult {
+  success: boolean
+  path?: string
+  error?: string
+}
+
+export interface EnglishReadResult {
+  success: boolean
+  data?: string
+  error?: string
+}
+
+export interface EnglishFileUrlResult {
+  success: boolean
+  url?: string
+  error?: string
+}
+
+export interface EnglishPathInfo {
+  exists: boolean
+  isDirectory?: boolean
+  isFile?: boolean
+  size?: number
+  mtime?: number
+  error?: string
+}
+
+export interface EnglishAPI {
+  selectDataset: () => Promise<EnglishSelectResult>
+  resolvePath: (basePath: string, ...segments: string[]) => Promise<EnglishResolveResult>
+  pathInfo: (absolutePath: string) => Promise<EnglishPathInfo>
+  readFile: (absolutePath: string, encoding?: BufferEncoding) => Promise<EnglishReadResult>
+  getFileUrl: (absolutePath: string) => Promise<EnglishFileUrlResult>
+}
+
 export interface ElectronAPI {
   ssh: {
     connect: (config: SSHConfig) => Promise<SSHResult>
@@ -35,6 +77,7 @@ export interface ElectronAPI {
     saveHistory: (history: any[]) => Promise<SSHResult>
     loadHistory: () => Promise<SSHHistoryResult>
   }
+  english?: EnglishAPI
   shell: {
     openExternal: (url: string) => Promise<void>
   }

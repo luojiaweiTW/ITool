@@ -46,6 +46,15 @@
           <i class="i-mdi-close" /> 断开连接
         </el-button>
         
+        <el-button
+          size="default"
+          @click="showLogs = !showLogs"
+          :type="showLogs ? 'primary' : ''"
+          :title="showLogs ? '隐藏日志' : '显示日志'"
+        >
+          <i :class="showLogs ? 'i-mdi-console' : 'i-mdi-console-line'" />
+        </el-button>
+
         <div v-if="connected" class="ssh-shortcuts-hint">
           <span class="shortcut-item">
             <i class="i-mdi-content-copy" />
@@ -84,10 +93,57 @@
       </div>
     </div>
 
+    <!-- 连接日志输出框 -->
+    <div v-show="showLogs" class="connection-logs-panel">
+      <neon-card style="min-height: auto;">
+        <template #header>
+          <div style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
+            <span style="font-size: 13px; font-weight: bold;">连接日志</span>
+            <div style="display: flex; gap: 8px;">
+              <el-button
+                type="text"
+                size="small"
+                @click="clearConnectionLogs"
+                title="清空日志"
+              >
+                <i class="i-mdi-delete-sweep" /> 清空
+              </el-button>
+              <el-button
+                type="text"
+                size="small"
+                @click="showLogs = false"
+                title="关闭"
+              >
+                <i class="i-mdi-close" />
+              </el-button>
+            </div>
+          </div>
+        </template>
+        <div class="connection-logs-header" style="padding: 4px 8px; margin-bottom: 0;">
+          <span class="connection-logs-count">共 {{ connectionLogs.length }} 条日志</span>
+        </div>
+        <div ref="connectionLogContainer" class="connection-logs scrollbar-thin" style="height: 100px; min-height: 0; padding: 8px;">
+          <div
+            v-for="(log, index) in connectionLogs"
+            :key="index"
+            :class="['connection-log-item', `log-${log.type}`]"
+          >
+            <span class="log-time">{{ log.time }}</span>
+            <span class="log-content" v-html="formatLogContent(log.content)"></span>
+          </div>
+          <div v-if="connectionLogs.length === 0" class="empty-state-small" style="padding: 10px; text-align: center;">
+            <i class="i-mdi-console-line" style="font-size: 20px; color: var(--neon-cyan);" />
+            <div style="margin-top: 4px; color: var(--color-muted); font-size: 12px;">等待连接...</div>
+          </div>
+        </div>
+      </neon-card>
+    </div>
+
     <!-- 主体内容 -->
     <div class="tool-content ssh-content">
       <!-- 左侧快捷面板 -->
       <div v-if="showLeftPanel" class="ssh-sidebar">
+
         <!-- 历史连接（紧凑版） -->
         <div class="sidebar-section">
           <div class="sidebar-section__header">
@@ -229,6 +285,14 @@
             <div v-if="isLoadingFiles" class="file-loading">
               <i class="i-mdi-loading" style="animation: spin 1s linear infinite;" />
               <span>加载中...</span>
+            </div>
+
+            <div v-else-if="fileLoadError" class="file-error">
+              <i class="i-mdi-alert-circle" style="color: var(--neon-pink);" />
+              <span>{{ fileLoadError }}</span>
+              <el-button size="small" type="primary" @click="loadFiles">
+                <i class="i-mdi-refresh" /> 重试
+              </el-button>
             </div>
 
             <div v-else class="file-list">
@@ -923,6 +987,12 @@ interface TerminalLine {
   type: 'info' | 'error' | 'success'
 }
 
+interface ConnectionLog {
+  time: string
+  content: string
+  type: 'info' | 'error' | 'success' | 'warning'
+}
+
 const sshForm = ref<SSHForm>({
   host: '',
   port: 22,
@@ -939,6 +1009,8 @@ const sshForm = ref<SSHForm>({
 const connected = ref(false)
 const connectionHistory = ref<ConnectionRecord[]>([])
 const terminalLines = ref<TerminalLine[]>([])
+const connectionLogs = ref<ConnectionLog[]>([])
+const connectionLogContainer = ref<HTMLElement | null>(null)
 const commandInput = ref('')
 const terminalOutput = ref<HTMLElement | null>(null)
 const commandInputRef = ref<HTMLTextAreaElement | null>(null)
@@ -946,6 +1018,7 @@ const terminalContainer = ref<HTMLDivElement | null>(null)
 let xterm: Terminal | null = null
 let fitAddon: FitAddon | null = null
 let pasteHandler: ((event: ClipboardEvent) => void) | null = null
+let resizeHandler: (() => void) | null = null
 const isLoadingHistory = ref(false)
 const isConnecting = ref(false)
 let connectTimeout: any = null
@@ -1019,6 +1092,7 @@ const filteredHistory = computed(() => {
 const showConfigDialog = ref(false)
 const showHistoryManager = ref(false)
 const showLeftPanel = ref(true)
+const showLogs = ref(true)
 const activeTab = ref<'commands' | 'files'>('commands')
 const showCommandsPanel = ref(true)
 const showFilesPanel = ref(true)
@@ -1030,6 +1104,7 @@ const showAddCommand = ref(false)
 const currentPath = ref('/')
 const fileList = ref<Array<{ name: string; type: string; size: number; modified: number; permissions: string }>>([])
 const isLoadingFiles = ref(false)
+const fileLoadError = ref('')  // 文件加载错误信息
 const showFileDialog = ref(false)
 const followTerminalPath = ref(false)
 const transferProgress = ref({
@@ -1051,6 +1126,31 @@ const debouncedSaveHistory = () => {
     saveHistory()
     saveHistoryTimer = null
   }, 1000) // 1秒防抖
+}
+
+// 性能优化：路径跟随防抖
+let pathFollowTimer: any = null
+let lastDetectedPath: string = ''
+const debouncedPathFollow = (newPath: string) => {
+  // 如果路径没变，直接忽略
+  if (newPath === lastDetectedPath || newPath === currentPath.value) {
+    return
+  }
+
+  if (pathFollowTimer) {
+    clearTimeout(pathFollowTimer)
+  }
+
+  pathFollowTimer = setTimeout(() => {
+    pathFollowTimer = null
+    // 再次检查路径是否真的变了
+    if (newPath !== currentPath.value && followTerminalPath.value && showFilesPanel.value) {
+      console.log('[Path Follow] Path changed to:', newPath)
+      lastDetectedPath = newPath
+      currentPath.value = newPath
+      loadFiles()
+    }
+  }, 500) // 500ms 防抖，避免频繁刷新
 }
 
 // 性能优化：缓存正则表达式
@@ -1286,37 +1386,38 @@ const loadHistoryItem = (item: ConnectionRecord) => {
 // 双击历史项自动连接（带防抖）
 const quickConnect = async (item: ConnectionRecord) => {
   console.log('Quick connect requested to:', item.host)
-  
+
   // 取消单击的延迟操作
   if (clickTimeout) {
     clearTimeout(clickTimeout)
     clickTimeout = null
   }
-  
+
   // 清除之前的连接定时器
   if (connectTimeout) {
     console.log('Clearing previous connect timeout')
     clearTimeout(connectTimeout)
     connectTimeout = null
   }
-  
-  // 如果正在连接，忽略
+
+  // 如果正在连接，忽略（提前检查，避免进入 setTimeout）
   if (isConnecting.value) {
     console.log('Already connecting, ignoring')
     ElMessage.warning('正在连接中，请稍候...')
     return
   }
-  
+
+  // 立即设置连接状态，防止快速多次点击
+  isConnecting.value = true
+
   // 先加载配置（不打开对话框）
   loadHistoryConfig(item)
-  
+
   // 防抖延时 300ms，避免频繁点击
   connectTimeout = setTimeout(async () => {
     connectTimeout = null
-    
+
     try {
-      isConnecting.value = true
-      
       // 如果已经连接，先断开
       if (connected.value) {
         console.log('Disconnecting previous connection...')
@@ -1324,10 +1425,10 @@ const quickConnect = async (item: ConnectionRecord) => {
         // 等待一下确保断开完成
         await new Promise(resolve => setTimeout(resolve, 500))
       }
-      
+
       // 等待表单更新
       await nextTick()
-      
+
       // 自动连接
       if (canConnect.value) {
         console.log('Auto-connecting...')
@@ -1339,7 +1440,7 @@ const quickConnect = async (item: ConnectionRecord) => {
       isConnecting.value = false
     }
   }, 300)
-  
+
   console.log('Connect scheduled in 300ms')
 }
 
@@ -2096,14 +2197,15 @@ const loadFiles = async (path?: string) => {
   if (path) {
     currentPath.value = path
   }
-  
+
   if (!window.electron?.sftp) {
     ElMessage.warning('SFTP功能仅在桌面应用中可用')
     return
   }
 
   isLoadingFiles.value = true
-  
+  fileLoadError.value = ''  // 清除之前的错误
+
   try {
     const result = await window.electron.sftp.listDir(currentPath.value)
     if (result.success) {
@@ -2113,11 +2215,16 @@ const loadFiles = async (path?: string) => {
         if (a.type !== 'directory' && b.type === 'directory') return 1
         return a.name.localeCompare(b.name)
       })
+      fileLoadError.value = ''  // 成功时清除错误
       console.log('✓ Loaded', fileList.value.length, 'files')
     } else {
+      fileLoadError.value = result.error || '加载失败'
+      fileList.value = []  // 清空列表
       ElMessage.error('加载文件列表失败: ' + result.error)
     }
   } catch (e: any) {
+    fileLoadError.value = e.message || '加载失败'
+    fileList.value = []  // 清空列表
     ElMessage.error('加载失败: ' + e.message)
   } finally {
     isLoadingFiles.value = false
@@ -2292,6 +2399,56 @@ const formatBytes = (bytes: number) => {
 // 最大终端输出行数（防止性能问题）
 const MAX_TERMINAL_LINES = 300  // 降低行数，避免 UI 卡死
 
+// 添加连接日志
+const addConnectionLog = (content: string, type: 'info' | 'error' | 'success' | 'warning' = 'info') => {
+  const now = new Date()
+  const time = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`
+  
+  connectionLogs.value.push({
+    time,
+    content,
+    type,
+  })
+  
+  // 限制日志行数，防止内存占用过多
+  const MAX_CONNECTION_LOGS = 200
+  if (connectionLogs.value.length > MAX_CONNECTION_LOGS) {
+    connectionLogs.value.shift()
+  }
+
+  // 自动滚动到底部
+  nextTick(() => {
+    if (connectionLogContainer.value) {
+      connectionLogContainer.value.scrollTop = connectionLogContainer.value.scrollHeight
+    }
+  })
+}
+
+// 清空连接日志
+const clearConnectionLogs = () => {
+  connectionLogs.value = []
+}
+
+// 格式化日志内容（移除ANSI转义序列，保留基本格式）
+const formatLogContent = (content: string): string => {
+  // 移除 ANSI 转义序列，但保留基本结构
+  let formatted = content
+    .replace(/\x1b\[[0-9;]*m/g, '') // 移除颜色代码
+    .replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '') // 移除其他ANSI序列
+    .replace(/\r\n/g, '<br>')
+    .replace(/\n/g, '<br>')
+    .replace(/\r/g, '')
+  
+  // 转义 HTML
+  formatted = formatted
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/&lt;br&gt;/g, '<br>') // 恢复换行
+  
+  return formatted
+}
+
 // 添加终端输出
 const addTerminalLine = (content: string, type: 'info' | 'error' | 'success' = 'info') => {
   const now = new Date()
@@ -2391,7 +2548,23 @@ const connect = async () => {
   }
 
   try {
-    addTerminalLine(`正在连接到 ${sshForm.value.username}@${sshForm.value.host}:${sshForm.value.port}...`, 'info')
+    // 🔥 设置连接状态，确保日志面板显示
+    isConnecting.value = true
+    
+    // 🔥 关键修复：在连接开始前就初始化 xterm 终端，确保连接日志可见
+    if (!xterm) {
+      await nextTick()
+      initTerminal()
+    }
+    
+    // 清空之前的输出
+    if (xterm) {
+      xterm.clear()
+      xterm.writeln(`\x1b[36m正在连接到 ${sshForm.value.username}@${sshForm.value.host}:${sshForm.value.port}...\x1b[0m\r\n`)
+    }
+    
+    // 添加连接日志
+    addConnectionLog(`正在连接到 ${sshForm.value.username}@${sshForm.value.host}:${sshForm.value.port}...`, 'info')
 
     // 构建 SSH 命令
     const args = [
@@ -2418,31 +2591,40 @@ const connect = async () => {
 
       if (result.success) {
         connected.value = true
-        
-        // 初始化xterm终端
-        await nextTick()
-        initTerminal()
+        isConnecting.value = false
         
         // 显示欢迎信息
         if (xterm) {
           xterm.writeln('\r\n\x1b[32m✓ SSH 连接成功！\x1b[0m\r\n')
         }
         
+        addConnectionLog('✓ SSH 连接成功！', 'success')
         await addToHistory()
         ElMessage.success('SSH 连接成功')
       } else {
+        isConnecting.value = false
+        // 连接失败时，确保错误信息显示
+        const errorMsg = result.error || '连接失败'
         if (xterm) {
-          xterm.writeln(`\r\n\x1b[31m❌ 连接失败: ${result.error}\x1b[0m\r\n`)
+          xterm.writeln(`\r\n\x1b[31m❌ ${errorMsg}\x1b[0m\r\n`)
         }
-        ElMessage.error('连接失败')
+        addConnectionLog(`❌ ${errorMsg}`, 'error')
+        ElMessage.error(errorMsg)
       }
     } else {
       // 浏览器环境提示
-      addTerminalLine('SSH 功能仅在桌面应用中可用', 'error')
+      if (xterm) {
+        xterm.writeln('\x1b[31mSSH 功能仅在桌面应用中可用\x1b[0m\r\n')
+      }
+      addConnectionLog('SSH 功能仅在桌面应用中可用', 'warning')
       ElMessage.warning('SSH 功能仅在桌面应用中可用')
     }
   } catch (error: any) {
-    addTerminalLine(`连接错误: ${error.message}`, 'error')
+    isConnecting.value = false
+    if (xterm) {
+      xterm.writeln(`\x1b[31m连接错误: ${error.message}\x1b[0m\r\n`)
+    }
+    addConnectionLog(`连接错误: ${error.message}`, 'error')
     ElMessage.error('连接失败')
   }
 }
@@ -2669,7 +2851,7 @@ const initTerminal = () => {
                 })
                 .catch(fallbackErr => {
                   console.error('Failed to copy (both methods):', fallbackErr)
-                  ElMessage.error('复制失败：请手动选中文本后按 Ctrl+C')
+                  ElMessage.error('复制失败：浏览器安全限制，请尝试右键复制')
                 })
             })
         } else {
@@ -2681,7 +2863,7 @@ const initTerminal = () => {
             })
             .catch(err => {
               console.error('Failed to copy:', err)
-              ElMessage.error('复制失败：请手动选中文本后按 Ctrl+C')
+              ElMessage.error('复制失败：浏览器安全限制，请尝试右键复制')
             })
         }
       } else {
@@ -2740,7 +2922,7 @@ const initTerminal = () => {
   terminalContainer.value?.addEventListener('paste', pasteHandler)
 
   // 窗口大小变化时自适应
-  const handleResize = () => {
+  resizeHandler = () => {
     if (fitAddon && xterm) {
       fitAddon.fit()
       // 通知后端更新终端大小
@@ -2749,8 +2931,8 @@ const initTerminal = () => {
       }
     }
   }
-  
-  window.addEventListener('resize', handleResize)
+
+  window.addEventListener('resize', resizeHandler)
   
   console.log('✓ Xterm initialized with copy/paste support')
 }
@@ -2762,7 +2944,13 @@ const destroyTerminal = () => {
     terminalContainer.value.removeEventListener('paste', pasteHandler)
     pasteHandler = null
   }
-  
+
+  // 清理 resize 事件监听器
+  if (resizeHandler) {
+    window.removeEventListener('resize', resizeHandler)
+    resizeHandler = null
+  }
+
   if (xterm) {
     xterm.dispose()
     xterm = null
@@ -3080,6 +3268,9 @@ onMounted(() => {
   console.log('window.electron:', window.electron)
   console.log('window.electron.ssh:', window.electron?.ssh)
   
+  // 🔥 测试：添加一条初始日志，确保面板可见
+  addConnectionLog('SSH 工具已就绪，等待连接...', 'info')
+  
   // 加载历史记录
   loadHistory().then(() => {
     console.log('Initial history loaded, count:', connectionHistory.value.length)
@@ -3095,91 +3286,115 @@ onMounted(() => {
   if (window.electron && window.electron.ssh) {
     console.log('Setting up SSH listeners')
     window.electron.ssh.onOutput((data: string) => {
-      // 性能优化：使用requestAnimationFrame批量写入终端
-      if (xterm && connected.value) {
-        outputBuffer += data
-        
-        // 性能优化：限制输出频率到60fps
-        if (!outputRafId && !shouldThrottleOutput()) {
-          outputRafId = requestAnimationFrame(() => {
-            if (outputBuffer && xterm) {
-              // 性能优化：限制单次写入的数据量
-              const maxChunkSize = 4096 // 4KB per frame
-              if (outputBuffer.length > maxChunkSize) {
-                xterm.write(outputBuffer.substring(0, maxChunkSize))
-                outputBuffer = outputBuffer.substring(maxChunkSize)
-                // 继续处理剩余数据
-                outputRafId = null
-                if (outputBuffer.length > 0) {
-                  requestAnimationFrame(() => {
-                    if (outputBuffer && xterm) {
-                      xterm.write(outputBuffer)
-                      outputBuffer = ''
-                    }
-                  })
+      // 🔥 添加连接日志 - 处理多行数据
+      const lines = data.split(/\r?\n/).filter(line => line.trim())
+      lines.forEach(line => {
+        // 移除 ANSI 转义序列
+        const cleanData = line.replace(/\x1b\[[0-9;]*m/g, '').replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '').trim()
+        if (cleanData) {
+          // 判断日志类型
+          let logType: 'info' | 'error' | 'success' | 'warning' = 'info'
+          const lowerData = cleanData.toLowerCase()
+          if (cleanData.includes('❌') || cleanData.includes('失败') || cleanData.includes('错误') || 
+              lowerData.includes('error') || lowerData.includes('failed') || lowerData.includes('refused') ||
+              lowerData.includes('timeout') || lowerData.includes('econnrefused') || lowerData.includes('etimedout') ||
+              lowerData.includes('连接被拒绝') || lowerData.includes('连接超时') || lowerData.includes('连接失败')) {
+            logType = 'error'
+          } else if (cleanData.includes('✓') || cleanData.includes('成功') || lowerData.includes('success')) {
+            logType = 'success'
+          } else if (cleanData.includes('⚠️') || cleanData.includes('警告') || lowerData.includes('warning')) {
+            logType = 'warning'
+          }
+          addConnectionLog(cleanData, logType)
+        }
+      })
+      
+      // 🔥 关键修复：无论连接是否成功，都显示到 xterm 终端
+      if (xterm) {
+        // 如果已连接，使用性能优化的批量写入
+        if (connected.value) {
+          outputBuffer += data
+          
+          // 性能优化：限制输出频率到60fps
+          if (!outputRafId && !shouldThrottleOutput()) {
+            outputRafId = requestAnimationFrame(() => {
+              if (outputBuffer && xterm) {
+                // 性能优化：限制单次写入的数据量
+                const maxChunkSize = 4096 // 4KB per frame
+                if (outputBuffer.length > maxChunkSize) {
+                  xterm.write(outputBuffer.substring(0, maxChunkSize))
+                  outputBuffer = outputBuffer.substring(maxChunkSize)
+                  // 继续处理剩余数据
+                  outputRafId = null
+                  if (outputBuffer.length > 0) {
+                    requestAnimationFrame(() => {
+                      if (outputBuffer && xterm) {
+                        xterm.write(outputBuffer)
+                        outputBuffer = ''
+                      }
+                    })
+                  }
+                } else {
+                  xterm.write(outputBuffer)
+                  outputBuffer = ''
                 }
-              } else {
-                xterm.write(outputBuffer)
-                outputBuffer = ''
+              }
+              outputRafId = null
+            })
+          }
+          
+          // 性能优化：路径跟随 - 提前过滤和快速检测
+          if (followTerminalPath.value && showFilesPanel.value && data) {
+            // 快速检测：只处理可能包含路径的短数据
+            if (data.length > 200 || data.indexOf('/') === -1) {
+              return
+            }
+
+            // 去除ANSI转义序列
+            const cleanData = data.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '').trim()
+
+            if (cleanData.length === 0 || cleanData.length > 200) {
+              return
+            }
+
+            // 检测pwd命令的输出 - 使用缓存的正则
+            let detectedPath = ''
+
+            // 优先匹配：pwd命令后的第一行路径
+            const lines = cleanData.split(/[\r\n]+/)
+            for (const line of lines) {
+              if (PATH_LINE_REGEX.test(line)) {
+                detectedPath = line
+                break
               }
             }
-            outputRafId = null
-          })
-        }
-        
-        // 性能优化：路径跟随 - 提前过滤和快速检测
-        if (followTerminalPath.value && showFilesPanel.value && data) {
-          // 快速检测：只处理可能包含路径的短数据
-          if (data.length > 200 || data.indexOf('/') === -1) {
-            return
-          }
-          
-          // 去除ANSI转义序列
-          const cleanData = data.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '').trim()
-          
-          if (cleanData.length === 0 || cleanData.length > 200) {
-            return
-          }
-          
-          // 检测pwd命令的输出 - 使用缓存的正则
-          let detectedPath = ''
-          
-          // 优先匹配：pwd命令后的第一行路径
-          const lines = cleanData.split(/[\r\n]+/)
-          for (const line of lines) {
-            if (PATH_LINE_REGEX.test(line)) {
-              detectedPath = line
-              break
-            }
-          }
-          
-          // 备用方案：从提示符提取路径
-          if (!detectedPath) {
-            const promptMatch = PROMPT_PATH_REGEX.exec(cleanData)
-            if (promptMatch && promptMatch[1]) {
-              detectedPath = promptMatch[1]
-            }
-          }
-          
-          if (detectedPath && detectedPath !== currentPath.value) {
-            console.log('[Path Follow] Path changed to:', detectedPath)
-            currentPath.value = detectedPath
-            // 延迟加载，避免频繁刷新
-            setTimeout(() => {
-              if (followTerminalPath.value && showFilesPanel.value) {
-                loadFiles()
+
+            // 备用方案：从提示符提取路径
+            if (!detectedPath) {
+              const promptMatch = PROMPT_PATH_REGEX.exec(cleanData)
+              if (promptMatch && promptMatch[1]) {
+                detectedPath = promptMatch[1]
               }
-            }, 300)
+            }
+
+            // 使用防抖函数处理路径变化
+            if (detectedPath) {
+              debouncedPathFollow(detectedPath)
+            }
           }
+        } else {
+          // 连接过程中的输出（连接前、连接失败时），直接写入终端
+          xterm.write(data)
         }
-      } else {
-        // 连接前的输出（如错误信息）使用旧方式
-        addTerminalLine(data, 'info')
       }
     })
 
     window.electron.ssh.onError((error: string) => {
-      if (xterm && connected.value) {
+      // 🔥 添加连接日志
+      addConnectionLog(error, 'error')
+      
+      // 🔥 关键修复：无论连接是否成功，都显示到 xterm 终端
+      if (xterm) {
         xterm.write(`\r\n\x1b[31m${error}\x1b[0m\r\n`)
       } else {
         addTerminalLine(error, 'error')
@@ -3225,17 +3440,29 @@ onMounted(() => {
 // 组件卸载前清理
 onBeforeUnmount(() => {
   console.log('SSH Tool unmounting, cleaning up...')
-  
-  // 清理定时器
+
+  // 清理所有定时器
   if (saveHistoryTimer) {
     clearTimeout(saveHistoryTimer)
     saveHistoryTimer = null
+  }
+  if (pathFollowTimer) {
+    clearTimeout(pathFollowTimer)
+    pathFollowTimer = null
+  }
+  if (clickTimeout) {
+    clearTimeout(clickTimeout)
+    clickTimeout = null
+  }
+  if (connectTimeout) {
+    clearTimeout(connectTimeout)
+    connectTimeout = null
   }
   if (outputRafId) {
     cancelAnimationFrame(outputRafId)
     outputRafId = null
   }
-  
+
   // 强制保存未保存的历史记录
   if (!isLoadingHistory.value) {
     saveHistory()
@@ -3393,6 +3620,86 @@ onBeforeUnmount(() => {
   gap: var(--spacing-md);
   overflow-y: auto;
   flex-shrink: 0;
+}
+
+/* 连接日志面板（固定在顶部） */
+.connection-logs-panel {
+  flex-shrink: 0;
+  margin: var(--spacing-sm) var(--spacing-lg);
+  border-bottom: 1px solid var(--color-border);
+  padding-bottom: var(--spacing-sm);
+  z-index: 10;
+  position: relative;
+}
+
+.connection-logs-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: var(--spacing-xs) var(--spacing-sm);
+  margin-bottom: var(--spacing-xs);
+  font-size: var(--font-size-sm);
+  color: var(--color-muted);
+}
+
+.connection-logs-count {
+  font-size: var(--font-size-xs);
+  color: var(--neon-cyan);
+}
+
+/* 连接日志样式 */
+.connection-logs {
+  min-height: 100px;
+  max-height: 250px;
+  overflow-y: auto;
+  padding: var(--spacing-md);
+  background-color: rgba(0, 0, 0, 0.5);
+  border-radius: 6px;
+  font-family: var(--font-family-mono);
+  font-size: 12px;
+  line-height: 1.8;
+  border: 2px solid rgba(33, 230, 255, 0.4);
+  box-shadow: 0 2px 10px rgba(33, 230, 255, 0.2);
+}
+
+.connection-log-item {
+  display: flex;
+  gap: 8px;
+  padding: 4px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  word-break: break-word;
+}
+
+.connection-log-item:last-child {
+  border-bottom: none;
+}
+
+.log-time {
+  color: var(--color-muted);
+  font-size: 10px;
+  flex-shrink: 0;
+  min-width: 50px;
+}
+
+.log-content {
+  flex: 1;
+  color: var(--color-text);
+}
+
+.connection-log-item.log-info .log-content {
+  color: var(--neon-cyan);
+}
+
+.connection-log-item.log-success .log-content {
+  color: var(--neon-lime);
+}
+
+.connection-log-item.log-error .log-content {
+  color: var(--neon-pink);
+}
+
+.connection-log-item.log-warning .log-content {
+  color: var(--neon-yellow);
 }
 
 .ssh-terminal {
@@ -3603,6 +3910,27 @@ onBeforeUnmount(() => {
   padding: var(--spacing-lg);
   font-size: 12px;
   color: var(--color-muted);
+}
+
+.file-error {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-lg);
+  font-size: 12px;
+  color: var(--neon-pink);
+  text-align: center;
+}
+
+.file-error i {
+  font-size: 24px;
+}
+
+.file-error span {
+  max-width: 180px;
+  word-break: break-word;
 }
 
 /* 性能优化：使用transform3d开启硬件加速 */

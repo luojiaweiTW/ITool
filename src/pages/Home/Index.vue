@@ -1,123 +1,108 @@
 <template>
   <div class="home-page">
-    <!-- 欢迎横幅 -->
+    <!-- 欢迎区域 -->
     <div class="hero-section">
-      <!-- 天气卡片（浮动在右上角） -->
-      <div class="floating-weather">
-        <HomeWeatherCard />
-      </div>
-
       <div class="hero-content">
-        <!-- Logo 头像 -->
-        <div class="hero-logo">
-          <img src="/build/icon.png" alt="IWork" class="logo-image" />
+        <!-- Logo 和标题 -->
+        <div class="hero-header">
+          <div class="hero-logo">
+            <img src="/build/icon.png" alt="IWork" class="logo-image" />
+          </div>
+          <h1 class="hero-title">
+            <span class="gradient-text">IWork</span>
+          </h1>
         </div>
-        <h1 class="hero-title">
-          <span class="neon-text">IWork</span>
-        </h1>
-        <p class="hero-subtitle">功能强大的在线工具集合 · 简洁高效 · 开箱即用</p>
-        <transition name="slogan-fade" mode="out-in">
+        
+        <p class="hero-subtitle">
+          功能强大的在线工具集合 · 简洁高效 · 开箱即用
+        </p>
+        
+        <!-- Slogan -->
+        <transition name="fade-slide" mode="out-in">
           <p :key="currentSloganIndex" class="hero-slogan">{{ currentSlogan }} 💪</p>
         </transition>
-        
-        <!-- 全局搜索 -->
-        <div class="search-box">
-          <div class="search-icon-wrapper">
+
+        <!-- 搜索框 -->
+        <div class="search-container">
+          <div class="search-box">
             <i class="i-mdi-magnify search-icon" />
+            <input
+              v-model="searchKeyword"
+              type="text"
+              placeholder="搜索工具 (Ctrl+K)..."
+              class="search-input"
+              @keyup.enter="handleSearch"
+            />
+            <button v-if="searchKeyword" class="clear-btn" @click="searchKeyword = ''">
+              <i class="i-mdi-close" />
+            </button>
           </div>
-          <input
-            v-model="searchKeyword"
-            type="text"
-            placeholder="搜索工具... (Ctrl+K)"
-            class="search-input"
-            @keyup.enter="handleSearch"
-          />
-          <div v-if="searchKeyword" class="search-clear" @click="searchKeyword = ''">
-            <i class="i-mdi-close" />
+          <!-- 快捷键提示 -->
+          <div class="shortcut-hint">
+            <span class="key">Ctrl</span> + <span class="key">K</span>
           </div>
         </div>
 
         <!-- 快速统计 -->
         <div class="stats-row">
           <div class="stat-item">
-            <i class="i-mdi-tools" />
-            <span class="stat-number">{{ totalTools }}</span>
+            <span class="stat-val">{{ totalTools }}</span>
             <span class="stat-label">个工具</span>
           </div>
+          <div class="divider">/</div>
           <div class="stat-item">
-            <i class="i-mdi-folder-multiple" />
-            <span class="stat-number">{{ categories.length }}</span>
+            <span class="stat-val">{{ categories.length }}</span>
             <span class="stat-label">个分类</span>
           </div>
+          <div class="divider">/</div>
           <div class="stat-item">
-            <i class="i-mdi-update" />
-            <span class="stat-label">持续更新</span>
+            <span class="stat-val">持续更新</span>
           </div>
         </div>
       </div>
+      
+      <!-- 天气卡片 (浮动) -->
+      <div class="weather-widget">
+        <HomeWeatherCard />
+      </div>
     </div>
 
-    <!-- 工具分类展示 -->
-    <div class="categories-section">
-      <h2 class="section-title">
-        <i class="i-mdi-view-grid" />
-        工具分类
-      </h2>
-      
+    <!-- 工具分类列表 -->
+    <div class="content-section">
+      <div v-if="filteredCategories.length === 0" class="empty-result">
+        <i class="i-mdi-package-variant-closed" />
+        <p>未找到相关工具</p>
+      </div>
+
       <div class="categories-grid">
         <div
           v-for="category in filteredCategories"
           :key="category.id"
-          class="category-card"
-          @click="handleCategoryClick(category)"
+          class="category-group"
         >
           <div class="category-header">
-            <i :class="category.icon" class="category-icon" />
-            <h3 class="category-name">{{ category.title }}</h3>
-            <span class="category-count">{{ category.children.length }}</span>
+            <div class="header-left">
+              <i :class="category.icon" class="category-icon" />
+              <h3 class="category-title">{{ category.title }}</h3>
+            </div>
           </div>
-          <div class="category-tools">
+          
+          <div class="tools-grid">
             <div
               v-for="tool in category.children"
               :key="tool.path"
-              class="tool-tag"
-              @click.stop="navigateToTool(tool.path)"
+              class="tool-card"
+              @click="navigateToTool(tool.path)"
             >
-              <i :class="tool.icon" />
-              {{ tool.title }}
+              <div class="tool-icon-box">
+                <i :class="tool.icon" />
+              </div>
+              <div class="tool-info">
+                <div class="tool-name">{{ tool.title }}</div>
+                <div class="tool-desc">{{ tool.description }}</div>
+              </div>
             </div>
           </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- 特色功能 -->
-    <div class="features-section">
-      <h2 class="section-title">
-        <i class="i-mdi-sparkles" />
-        特色功能
-      </h2>
-      
-      <div class="features-grid">
-        <div class="feature-card">
-          <i class="i-mdi-lightning-bolt feature-icon" />
-          <h3>快速高效</h3>
-          <p>所有工具本地运行，无需上传数据，保护隐私</p>
-        </div>
-        <div class="feature-card">
-          <i class="i-mdi-palette feature-icon" />
-          <h3>霓虹风格</h3>
-          <p>独特的赛博朋克霓虹设计，带来酷炫体验</p>
-        </div>
-        <div class="feature-card">
-          <i class="i-mdi-monitor-multiple feature-icon" />
-          <h3>双端支持</h3>
-          <p>Web版和桌面版，随时随地使用</p>
-        </div>
-        <div class="feature-card">
-          <i class="i-mdi-update feature-icon" />
-          <h3>持续更新</h3>
-          <p>不断添加新工具，优化用户体验</p>
         </div>
       </div>
     </div>
@@ -132,7 +117,7 @@ import HomeWeatherCard from '@/components/HomeWeatherCard.vue'
 const router = useRouter()
 const searchKeyword = ref('')
 
-// 打工人哲学 Slogan 列表
+// Slogan
 const slogans = [
   '我打工，故我卑微；我加班，故我存在',
   '他人即地狱，老板更是地狱中的地狱',
@@ -156,16 +141,11 @@ const slogans = [
   '知行合一？先让我周末能合眼',
 ]
 
-// 当前 Slogan 索引
 const currentSloganIndex = ref(0)
-
-// 当前 Slogan
 const currentSlogan = computed(() => slogans[currentSloganIndex.value])
-
-// Slogan 定时器
 let sloganTimer: ReturnType<typeof setInterval> | null = null
 
-// 工具分类数据（与 Sidebar.vue 保持一致）
+// 完整的工具列表
 const categories = [
   {
     id: 'text-processing',
@@ -222,6 +202,7 @@ const categories = [
       { path: '/tools/image-compressor', title: '图片压缩', icon: 'i-mdi-image-size-select-actual', description: '在线压缩 JPG/PNG/WebP' },
       { path: '/tools/image-converter', title: '图片格式转换', icon: 'i-mdi-image-sync', description: 'JPG/PNG/WebP/GIF 互转' },
       { path: '/tools/image-cropper', title: '图片裁剪缩放', icon: 'i-mdi-crop', description: '裁剪图片、调整尺寸' },
+      { path: '/tools/base64-image', title: 'Base64 图片转换', icon: 'i-mdi-image-filter-center-focus', description: '图片与 Base64 互转' },
     ]
   },
   {
@@ -232,7 +213,7 @@ const categories = [
       { path: '/tools/uuid', title: 'UUID 生成', icon: 'i-mdi-identifier', description: '生成 UUID/GUID' },
       { path: '/tools/random-generator', title: '随机数据生成', icon: 'i-mdi-dice-multiple', description: '生成随机字符串、模拟数据' },
       { path: '/tools/number-base', title: '进制转换', icon: 'i-mdi-numeric', description: '十进制、十六进制、二进制转换' },
-      { path: '/tools/qrcode', title: '二维码生成', icon: 'i-mdi-qrcode', description: '支持文本、网址、名片、WiFi、Logo等' },
+      { path: '/tools/qrcode', title: '二维码生成', icon: 'i-mdi-qrcode', description: '支持文本、网址、名片、WiFi' },
       { path: '/tools/unit-converter', title: '单位换算器', icon: 'i-mdi-swap-horizontal', description: '长度、重量、温度等单位互转' },
       { path: '/tools/color-converter', title: '颜色转换器', icon: 'i-mdi-palette', description: 'HEX、RGB、HSL 颜色格式互转' },
     ]
@@ -294,12 +275,8 @@ const categories = [
   },
 ]
 
-// 计算总工具数
-const totalTools = computed(() => {
-  return categories.reduce((sum, cat) => sum + cat.children.length, 0)
-})
+const totalTools = computed(() => categories.reduce((sum, cat) => sum + cat.children.length, 0))
 
-// 过滤分类
 const filteredCategories = computed(() => {
   if (!searchKeyword.value) return categories
   
@@ -315,26 +292,16 @@ const filteredCategories = computed(() => {
     .filter(cat => cat.children.length > 0)
 })
 
-// 导航到工具
 function navigateToTool(path: string) {
   router.push(path)
 }
 
-// 分类点击
-function handleCategoryClick(category: any) {
-  if (category.children.length > 0) {
-    navigateToTool(category.children[0].path)
-  }
-}
-
-// 搜索
 function handleSearch() {
   if (filteredCategories.value.length > 0 && filteredCategories.value[0].children.length > 0) {
     navigateToTool(filteredCategories.value[0].children[0].path)
   }
 }
 
-// 快捷键
 function handleKeyDown(e: KeyboardEvent) {
   if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
     e.preventDefault()
@@ -344,463 +311,352 @@ function handleKeyDown(e: KeyboardEvent) {
 
 onMounted(() => {
   window.addEventListener('keydown', handleKeyDown)
-  
-  // 启动 Slogan 轮播定时器（每1分钟切换一次）
   sloganTimer = setInterval(() => {
     currentSloganIndex.value = (currentSloganIndex.value + 1) % slogans.length
-  }, 60000) // 60000ms = 1分钟
+  }, 5000)
 })
 
 onUnmounted(() => {
   window.removeEventListener('keydown', handleKeyDown)
-  
-  // 清除 Slogan 定时器
-  if (sloganTimer) {
-    clearInterval(sloganTimer)
-    sloganTimer = null
-  }
+  if (sloganTimer) clearInterval(sloganTimer)
 })
 </script>
 
 <style scoped>
 .home-page {
-  min-height: 100%;
-  padding: var(--spacing-xl);
-  overflow-y: auto;
+  width: 100%;
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 40px 20px 80px;
+  display: flex;
+  flex-direction: column;
+  gap: 60px;
 }
 
-/* 欢迎横幅 */
+/* Hero Section */
 .hero-section {
+  text-align: center;
+  padding: 40px 0 20px;
+  animation: fadeIn 0.8s ease-out;
   position: relative;
-  padding: var(--spacing-4xl) var(--spacing-xl);
-  margin-bottom: var(--spacing-4xl);
-  background: linear-gradient(135deg, rgba(33, 230, 255, 0.1) 0%, rgba(155, 92, 255, 0.1) 100%);
-  border: 2px solid var(--neon-cyan);
-  border-radius: var(--radius-xl);
-  box-shadow: 
-    inset 0 0 60px rgba(33, 230, 255, 0.1),
-    0 0 30px rgba(33, 230, 255, 0.3);
-  overflow: hidden;
 }
 
-.hero-section::before {
-  content: '';
+.weather-widget {
   position: absolute;
   top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: 
-    radial-gradient(circle at 20% 50%, rgba(33, 230, 255, 0.2) 0%, transparent 50%),
-    radial-gradient(circle at 80% 50%, rgba(155, 92, 255, 0.2) 0%, transparent 50%);
-  pointer-events: none;
-}
-
-/* 浮动天气卡片 */
-.floating-weather {
-  position: absolute;
-  top: var(--spacing-xl);
-  right: var(--spacing-xl);
+  right: 20px;
   width: 240px;
   z-index: 10;
-  pointer-events: auto;
 }
 
-.hero-content {
-  position: relative;
-  text-align: center;
-  z-index: 1;
+@media (max-width: 1024px) {
+  .weather-widget {
+    position: static;
+    margin: 20px auto 0;
+    width: 100%;
+    max-width: 300px;
+  }
+}
+
+/* Logo 和标题容器 */
+.hero-header {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 24px;
+  margin-bottom: 16px;
 }
 
 .hero-logo {
-  display: flex;
-  justify-content: center;
-  margin-bottom: var(--spacing-xl);
+  flex-shrink: 0;
 }
 
 .logo-image {
-  width: 120px;
-  height: 120px;
-  border-radius: 50%;
-  border: 3px solid var(--neon-cyan);
-  box-shadow: 
-    0 0 20px rgba(33, 230, 255, 0.6),
-    0 0 40px rgba(33, 230, 255, 0.4),
-    inset 0 0 20px rgba(33, 230, 255, 0.2);
-  animation: logoFloat 3s ease-in-out infinite;
-  object-fit: cover;
+  width: 80px;
+  height: 80px;
+  filter: drop-shadow(0 0 20px rgba(155, 92, 255, 0.3)); /* 改为紫色光晕 */
+  transition: transform 0.3s ease;
 }
 
-@keyframes logoFloat {
-  0%, 100% {
-    transform: translateY(0px);
-  }
-  50% {
-    transform: translateY(-10px);
-  }
+.logo-image:hover {
+  transform: scale(1.05) rotate(5deg);
 }
 
 .hero-title {
-  font-size: 3.5em;
-  font-weight: var(--font-weight-bold);
-  margin: 0 0 var(--spacing-md);
-  font-family: var(--font-family-display);
+  font-size: 3rem;
+  margin: 0;
+  letter-spacing: -1px;
 }
 
-.neon-text {
-  font-size: 3rem;
-  font-weight: 900;
-  background: linear-gradient(135deg, var(--neon-cyan) 0%, var(--neon-purple) 50%, var(--neon-pink) 100%);
+.gradient-text {
+  background: linear-gradient(135deg, #fff 30%, var(--neon-purple) 100%); /* 改为紫色渐变 */
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
-  text-shadow: 
-    0 0 10px rgba(33, 230, 255, 0.8),
-    0 0 20px rgba(33, 230, 255, 0.6),
-    0 0 30px rgba(33, 230, 255, 0.4),
-    0 0 40px rgba(155, 92, 255, 0.4);
-  animation: neonPulse 2s ease-in-out infinite;
-}
-
-@keyframes neonPulse {
-  0%, 100% {
-    text-shadow: 
-      0 0 10px rgba(33, 230, 255, 0.8),
-      0 0 20px rgba(33, 230, 255, 0.6),
-      0 0 30px rgba(33, 230, 255, 0.4);
-  }
-  50% {
-    text-shadow: 
-      0 0 15px rgba(33, 230, 255, 1),
-      0 0 30px rgba(33, 230, 255, 0.8),
-      0 0 45px rgba(33, 230, 255, 0.6),
-      0 0 60px rgba(155, 92, 255, 0.6);
-  }
+  font-weight: 800;
 }
 
 .hero-subtitle {
-  font-size: var(--font-size-xl);
-  color: var(--color-muted);
-  margin-bottom: var(--spacing-md);
+  font-size: 1.1rem;
+  color: var(--color-text-secondary);
+  margin-bottom: 12px;
 }
 
 .hero-slogan {
-  font-size: 1.1rem;
-  color: var(--neon-yellow);
-  margin-top: var(--spacing-md);
-  font-weight: 600;
-  letter-spacing: 1px;
-  text-shadow: 
-    0 0 10px rgba(208, 255, 0, 0.6),
-    0 0 20px rgba(208, 255, 0, 0.4);
-  animation: sloganGlow 2s ease-in-out infinite;
+  font-size: 0.95rem;
+  color: var(--color-muted);
+  height: 24px;
+  font-family: var(--font-family-mono);
+  opacity: 0.8;
 }
 
-/* Slogan 淡入淡出过渡动画 */
-.slogan-fade-enter-active,
-.slogan-fade-leave-active {
-  transition: all 0.5s ease;
-}
-
-.slogan-fade-enter-from {
-  opacity: 0;
-  transform: translateY(-10px);
-}
-
-.slogan-fade-leave-to {
-  opacity: 0;
-  transform: translateY(10px);
-}
-
-@keyframes sloganGlow {
-  0%, 100% {
-    text-shadow: 
-      0 0 10px rgba(208, 255, 0, 0.6),
-      0 0 20px rgba(208, 255, 0, 0.4);
-  }
-  50% {
-    text-shadow: 
-      0 0 15px rgba(208, 255, 0, 0.8),
-      0 0 30px rgba(208, 255, 0, 0.6),
-      0 0 45px rgba(208, 255, 0, 0.4);
-  }
-}
-
-/* 搜索框 */
-.search-box {
+/* Search Box - 修正背景色 */
+.search-container {
   position: relative;
-  max-width: 600px;
-  margin: 0 auto var(--spacing-2xl);
-  display: flex;
-  align-items: center;
+  max-width: 500px;
+  margin: 40px auto 30px;
 }
 
-.search-icon-wrapper {
-  position: absolute;
-  left: var(--spacing-xl);
-  top: 0;
-  bottom: 0;
+.search-box {
   display: flex;
   align-items: center;
-  justify-content: center;
-  pointer-events: none;
-  z-index: 1;
+  background: rgba(30, 27, 46, 0.6); /* 深紫色半透明 */
+  border: 1px solid rgba(120, 110, 160, 0.3);
+  border-radius: 12px;
+  padding: 0 16px;
+  height: 52px;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+}
+
+.search-box:focus-within {
+  border-color: var(--neon-cyan);
+  box-shadow: 0 0 0 1px var(--neon-cyan), 0 0 12px rgba(33, 230, 255, 0.2);
+  transform: translateY(-2px);
+  background: rgba(40, 35, 60, 0.8);
 }
 
 .search-icon {
-  font-size: 1.5em;
-  color: var(--neon-cyan);
-  display: block;
+  font-size: 20px;
+  color: var(--color-text-secondary);
+  margin-right: 12px;
 }
 
 .search-input {
-  width: 100%;
-  padding: var(--spacing-lg) var(--spacing-xl) var(--spacing-lg) 60px;
-  background: rgba(10, 14, 39, 0.6);
-  border: 2px solid var(--neon-cyan);
-  border-radius: var(--radius-full);
-  font-size: var(--font-size-lg);
+  flex: 1;
+  background: transparent;
+  border: none;
   color: var(--color-text);
+  font-size: 16px;
   outline: none;
-  transition: all var(--transition-base);
-  box-shadow: inset 0 0 20px rgba(33, 230, 255, 0.1);
+  height: 100%;
 }
 
-.search-input:focus {
-  border-color: var(--neon-cyan-lighter);
-  box-shadow: 
-    inset 0 0 30px rgba(33, 230, 255, 0.2),
-    0 0 20px rgba(33, 230, 255, 0.4);
-}
-
-.search-clear {
-  position: absolute;
-  right: var(--spacing-lg);
-  top: 50%;
-  transform: translateY(-50%);
-  width: 32px;
-  height: 32px;
+.clear-btn {
+  background: transparent;
+  border: none;
+  color: var(--color-muted);
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
+}
+
+.clear-btn:hover {
   background: rgba(255, 255, 255, 0.1);
-  border-radius: 50%;
-  cursor: pointer;
-  transition: all var(--transition-base);
+  color: var(--color-text);
 }
 
-.search-clear:hover {
-  background: rgba(255, 255, 255, 0.2);
+.shortcut-hint {
+  position: absolute;
+  right: -80px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--color-muted);
+  font-size: 12px;
+  display: none;
 }
 
-/* 统计行 */
+@media (min-width: 768px) {
+  .shortcut-hint {
+    display: block;
+  }
+}
+
+.key {
+  background: rgba(255, 255, 255, 0.1);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-family: monospace;
+}
+
+/* Stats */
 .stats-row {
   display: flex;
   justify-content: center;
-  gap: var(--spacing-2xl);
-  flex-wrap: wrap;
+  align-items: center;
+  gap: 24px;
+  color: var(--color-muted);
+  font-size: 0.9rem;
 }
 
 .stat-item {
   display: flex;
-  align-items: center;
-  gap: var(--spacing-sm);
-  padding: var(--spacing-md) var(--spacing-xl);
-  background: rgba(33, 230, 255, 0.1);
-  border: 1px solid var(--neon-cyan);
-  border-radius: var(--radius-lg);
-  font-size: var(--font-size-lg);
+  gap: 8px;
+  align-items: baseline;
 }
 
-.stat-item i {
-  font-size: 1.5em;
-  color: var(--neon-cyan);
-}
-
-.stat-number {
-  font-size: 1.5em;
-  font-weight: var(--font-weight-bold);
-  color: var(--neon-cyan);
+.stat-val {
+  color: var(--color-text);
+  font-weight: 600;
   font-family: var(--font-family-mono);
 }
 
-.stat-label {
-  color: var(--color-muted);
+.divider {
+  color: rgba(255, 255, 255, 0.1);
 }
 
-/* 分类网格 */
-.section-title {
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-md);
-  font-size: var(--font-size-2xl);
-  font-weight: var(--font-weight-bold);
-  margin-bottom: var(--spacing-xl);
-  color: var(--neon-lime);
-  font-family: var(--font-family-display);
-}
-
-.section-title i {
-  font-size: 1.2em;
-}
-
-.categories-section {
-  margin-bottom: var(--spacing-4xl);
-}
-
-.categories-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
-  gap: var(--spacing-xl);
-}
-
-.category-card {
-  padding: var(--spacing-xl);
-  background: linear-gradient(135deg, var(--color-panel) 0%, var(--color-panel-light) 100%);
-  border: 2px solid var(--neon-lime);
-  border-radius: var(--radius-lg);
-  cursor: pointer;
-  transition: all var(--transition-base);
-  box-shadow: inset 0 0 30px rgba(208, 255, 0, 0.05);
-  display: flex;
-  flex-direction: column;
-  min-height: 100%;
-}
-
-.category-card:hover {
-  border-color: var(--neon-lime-light);
-  transform: translateY(-4px);
-  box-shadow: 
-    inset 0 0 40px rgba(208, 255, 0, 0.1),
-    0 8px 30px rgba(208, 255, 0, 0.3);
+/* Categories */
+.category-group {
+  margin-bottom: 40px;
 }
 
 .category-header {
+  margin-bottom: 20px;
+  padding-bottom: 10px;
+  border-bottom: 1px dashed rgba(120, 110, 160, 0.2);
+}
+
+.header-left {
   display: flex;
   align-items: center;
-  gap: var(--spacing-md);
-  margin-bottom: var(--spacing-lg);
+  gap: 12px;
 }
 
 .category-icon {
-  font-size: 2em;
-  color: var(--neon-lime);
+  font-size: 1.2rem;
+  color: var(--neon-purple); /* 标题图标改为紫色 */
+  opacity: 0.9;
 }
 
-.category-name {
-  flex: 1;
-  font-size: var(--font-size-xl);
-  font-weight: var(--font-weight-bold);
+.category-title {
+  font-size: 1.1rem;
+  font-weight: 600;
   margin: 0;
-}
-
-.category-count {
-  padding: var(--spacing-xs) var(--spacing-md);
-  background: rgba(208, 255, 0, 0.2);
-  border-radius: var(--radius-full);
-  font-size: var(--font-size-sm);
-  font-weight: var(--font-weight-bold);
-  color: var(--neon-lime);
-}
-
-.category-tools {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--spacing-sm);
-  flex: 1;
-  align-content: flex-start;
-}
-
-.tool-tag {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--spacing-xs);
-  padding: var(--spacing-xs) var(--spacing-md);
-  background: rgba(208, 255, 0, 0.1);
-  border: 1px solid rgba(208, 255, 0, 0.3);
-  border-radius: var(--radius-md);
-  font-size: var(--font-size-sm);
   color: var(--color-text);
-  transition: all var(--transition-base);
+  letter-spacing: 0.05em;
 }
 
-.tool-tag:hover {
-  background: rgba(208, 255, 0, 0.2);
-  border-color: var(--neon-lime);
-  transform: scale(1.05);
-}
-
-.tool-tag i {
-  color: var(--neon-lime);
-}
-
-/* 特色功能 */
-.features-section {
-  margin-bottom: var(--spacing-4xl);
-}
-
-.features-grid {
+/* Tools Grid - 卡片样式修复 */
+.tools-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
-  gap: var(--spacing-xl);
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 16px;
 }
 
-.feature-card {
-  padding: var(--spacing-2xl);
-  text-align: center;
-  background: linear-gradient(135deg, var(--color-panel) 0%, var(--color-panel-light) 100%);
-  border: 2px solid var(--neon-pink);
-  border-radius: var(--radius-lg);
-  transition: all var(--transition-base);
+.tool-card {
+  /* 恢复紫色调背景 */
+  background: rgba(30, 27, 46, 0.6);
+  border: 1px solid rgba(120, 110, 160, 0.2);
+  border-radius: 12px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  height: 100%;
+  backdrop-filter: blur(10px);
 }
 
-.feature-card:hover {
-  border-color: var(--neon-pink-light);
-  transform: translateY(-4px);
-  box-shadow: 
-    inset 0 0 30px rgba(255, 42, 161, 0.1),
-    0 8px 30px rgba(255, 42, 161, 0.3);
+.tool-card:hover {
+  /* 悬停更亮 */
+  background: rgba(40, 35, 60, 0.9);
+  border-color: rgba(155, 92, 255, 0.4);
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.3);
 }
 
-.feature-icon {
-  font-size: 3em;
-  color: var(--neon-pink);
-  margin-bottom: var(--spacing-md);
+.tool-icon-box {
+  width: 36px;
+  height: 36px;
+  background: rgba(155, 92, 255, 0.1); /* 紫色底 */
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--neon-purple);
+  font-size: 20px;
+  transition: all 0.2s;
+  border: 1px solid rgba(155, 92, 255, 0.2);
 }
 
-.feature-card h3 {
-  font-size: var(--font-size-xl);
-  font-weight: var(--font-weight-bold);
-  margin: 0 0 var(--spacing-sm);
-  color: var(--neon-pink);
+.tool-card:hover .tool-icon-box {
+  background: var(--neon-cyan); /* 悬停变青色 */
+  color: #000;
+  border-color: var(--neon-cyan);
 }
 
-.feature-card p {
-  font-size: var(--font-size-sm);
+.tool-name {
+  font-size: 0.95rem;
+  font-weight: 500;
+  color: var(--color-text);
+  margin-bottom: 4px;
+}
+
+.tool-desc {
+  font-size: 0.8rem;
   color: var(--color-muted);
-  margin: 0;
+  line-height: 1.4;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
-/* 响应式 */
+/* Empty State */
+.empty-result {
+  text-align: center;
+  padding: 60px 0;
+  color: var(--color-muted);
+}
+
+.empty-result i {
+  font-size: 48px;
+  margin-bottom: 16px;
+  opacity: 0.5;
+  display: block;
+}
+
+/* 响应式布局 */
 @media (max-width: 768px) {
+  .hero-header {
+    flex-direction: column;
+    gap: 16px;
+  }
+  
+  .logo-image {
+    width: 60px;
+    height: 60px;
+  }
+  
   .hero-title {
-    font-size: 2em;
+    font-size: 2rem;
   }
-  
-  .floating-weather {
-    position: relative;
-    top: auto;
-    right: auto;
-    width: 100%;
-    margin-bottom: var(--spacing-xl);
-  }
-  
-  .categories-grid {
-    grid-template-columns: 1fr;
-  }
-  
-  .features-grid {
-    grid-template-columns: 1fr;
-  }
+}
+
+/* Animation */
+.fade-slide-enter-active,
+.fade-slide-leave-active {
+  transition: all 0.3s ease;
+}
+
+.fade-slide-enter-from,
+.fade-slide-leave-to {
+  opacity: 0;
+  transform: translateY(10px);
 }
 </style>

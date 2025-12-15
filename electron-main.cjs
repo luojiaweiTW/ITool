@@ -1,5 +1,6 @@
 const { app, BrowserWindow, Menu, globalShortcut, ipcMain, nativeImage, clipboard, screen, desktopCapturer, dialog } = require('electron')
 const path = require('path')
+const { pathToFileURL } = require('url')
 const { spawn } = require('child_process')
 const fs = require('fs')
 const { Client } = require('ssh2')
@@ -1207,10 +1208,23 @@ ipcMain.handle('ssh:connect', async (_event, config) => {
       console.log('Connecting via ssh2...')
       console.log('Host:', config.host, 'Port:', config.port, 'User:', config.username, 'Auth:', config.authType)
 
+      // 🔥 发送连接开始日志 - 确保立即发送
+      if (mainWindow) {
+        mainWindow.webContents.send('ssh:output', `\x1b[36m正在连接到 ${config.username}@${config.host}:${config.port}...\x1b[0m\r\n`)
+        mainWindow.webContents.send('ssh:output', `\x1b[33m认证方式: ${config.authType === 'password' ? '密码认证' : '密钥认证'}\x1b[0m\r\n`)
+        // 确保日志立即显示
+        mainWindow.webContents.send('ssh:output', `\x1b[36m正在建立连接...\x1b[0m\r\n`)
+      }
+
       sshClient = new Client()
 
       sshClient.on('ready', () => {
         console.log('✓ SSH Client connected!')
+        
+        // 🔥 发送认证成功日志
+        if (mainWindow) {
+          mainWindow.webContents.send('ssh:output', `\x1b[32m✓ 认证成功，正在打开 Shell 会话...\x1b[0m\r\n`)
+        }
         
         // 保存配置
         global.sshConfig = config
@@ -1223,12 +1237,21 @@ ipcMain.handle('ssh:connect', async (_event, config) => {
         }, (err, stream) => {
           if (err) {
             console.error('Failed to open shell:', err)
+            const errorMsg = `\x1b[31m❌ 无法打开 Shell 会话: ${err.message}\x1b[0m\r\n`
+            if (mainWindow) {
+              mainWindow.webContents.send('ssh:output', errorMsg)
+            }
             resolve({ success: false, error: '无法打开 shell: ' + err.message })
             return
           }
 
           sshStream = stream
           console.log('✓ Shell session opened')
+
+          // 🔥 发送 Shell 会话打开成功日志
+          if (mainWindow) {
+            mainWindow.webContents.send('ssh:output', `\x1b[32m✓ Shell 会话已打开\x1b[0m\r\n`)
+          }
 
           // 监听输出
           stream.on('data', (data) => {
@@ -1257,15 +1280,21 @@ ipcMain.handle('ssh:connect', async (_event, config) => {
           sshClient.sftp((sftpErr, sftp) => {
             if (sftpErr) {
               console.error('Failed to open SFTP:', sftpErr)
+              if (mainWindow) {
+                mainWindow.webContents.send('ssh:output', `\x1b[33m⚠️ SFTP 会话打开失败: ${sftpErr.message}\x1b[0m\r\n`)
+              }
             } else {
               sftpClient = sftp
               console.log('✓ SFTP session opened')
+              if (mainWindow) {
+                mainWindow.webContents.send('ssh:output', `\x1b[32m✓ SFTP 会话已打开\x1b[0m\r\n`)
+              }
             }
           })
 
           // 连接成功
           if (mainWindow) {
-            mainWindow.webContents.send('ssh:output', '\r\n✓ SSH 连接成功！\r\n')
+            mainWindow.webContents.send('ssh:output', '\r\n\x1b[32m✓ SSH 连接成功！\x1b[0m\r\n')
           }
           resolve({ success: true })
         })
@@ -1277,10 +1306,14 @@ ipcMain.handle('ssh:connect', async (_event, config) => {
         console.error('Error message:', err.message)
         
         let errorMsg = '连接失败'
+        let errorColor = '\x1b[31m' // 红色
         
         // 根据错误类型提供更友好的提示
         if (err.level === 'client-authentication') {
           errorMsg = '❌ 认证失败：用户名或密码错误，请检查登录信息'
+          if (mainWindow) {
+            mainWindow.webContents.send('ssh:output', `\x1b[33m⚠️ 正在尝试认证...\x1b[0m\r\n`)
+          }
         } else if (err.code === 'ECONNREFUSED') {
           errorMsg = '❌ 连接被拒绝：请检查服务器地址和端口是否正确'
         } else if (err.code === 'ETIMEDOUT' || err.message.includes('Timed out')) {
@@ -1291,8 +1324,18 @@ ipcMain.handle('ssh:connect', async (_event, config) => {
           errorMsg = `❌ 连接失败: ${err.message}`
         }
         
+        // 🔥 发送详细的错误信息到前端 - 确保立即发送
         if (mainWindow) {
-          mainWindow.webContents.send('ssh:output', errorMsg + '\r\n')
+          // 先发送主要错误信息
+          mainWindow.webContents.send('ssh:output', `${errorColor}${errorMsg}\x1b[0m\r\n`)
+          // 发送错误代码（如果有）
+          if (err.code) {
+            mainWindow.webContents.send('ssh:output', `\x1b[90m错误代码: ${err.code}\x1b[0m\r\n`)
+          }
+          // 发送原始错误信息（用于调试）
+          if (err.message && !err.message.includes(errorMsg)) {
+            mainWindow.webContents.send('ssh:output', `\x1b[90m详细错误: ${err.message}\x1b[0m\r\n`)
+          }
         }
         
         resolve({ success: false, error: errorMsg })
@@ -2462,6 +2505,76 @@ ipcMain.handle('delete-file', async (_event, relativePath) => {
     const absolutePath = path.join(getDataPath(), relativePath)
     await fs.promises.unlink(absolutePath)
     return { success: true }
+  } catch (error) {
+    return { success: false, error: error.message }
+  }
+})
+
+/**
+ * ==================== 英语学习工具 ====================
+ */
+ipcMain.handle('english:selectDataset', async () => {
+  const result = await dialog.showOpenDialog(mainWindow, {
+    title: '选择新概念英语数据目录',
+    properties: ['openDirectory'],
+  })
+
+  if (result.canceled) {
+    return { success: false, canceled: true }
+  }
+
+  const folderPath = result.filePaths[0]
+  const dataJson = path.join(folderPath, 'static', 'data.json')
+  if (!fs.existsSync(dataJson)) {
+    return { success: false, error: '所选目录缺少 static/data.json，请检查路径' }
+  }
+
+  return { success: true, path: folderPath }
+})
+
+ipcMain.handle('english:resolvePath', async (_event, basePath, ...segments) => {
+  try {
+    const flatSegments = segments.flat ? segments.flat(Infinity) : segments.reduce((acc, cur) => {
+      if (Array.isArray(cur)) return acc.concat(cur)
+      acc.push(cur)
+      return acc
+    }, [])
+    const targetPath = path.join(basePath, ...flatSegments.filter(Boolean))
+    return { success: true, path: targetPath }
+  } catch (error) {
+    return { success: false, error: error.message }
+  }
+})
+
+ipcMain.handle('english:pathInfo', async (_event, absolutePath) => {
+  try {
+    const stats = await fs.promises.stat(absolutePath)
+    return {
+      exists: true,
+      isDirectory: stats.isDirectory(),
+      isFile: stats.isFile(),
+      size: stats.size,
+      mtime: stats.mtimeMs,
+    }
+  } catch (error) {
+    return { exists: false, error: error.message }
+  }
+})
+
+ipcMain.handle('english:readFile', async (_event, absolutePath, encoding = 'utf-8') => {
+  try {
+    const resolvedPath = path.resolve(absolutePath)
+    const data = await fs.promises.readFile(resolvedPath, encoding)
+    return { success: true, data: typeof data === 'string' ? data : data.toString(encoding) }
+  } catch (error) {
+    return { success: false, error: error.message }
+  }
+})
+
+ipcMain.handle('english:getFileUrl', async (_event, absolutePath) => {
+  try {
+    const resolvedPath = path.resolve(absolutePath)
+    return { success: true, url: pathToFileURL(resolvedPath).href }
   } catch (error) {
     return { success: false, error: error.message }
   }

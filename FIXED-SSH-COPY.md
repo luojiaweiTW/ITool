@@ -85,3 +85,19 @@ xterm.attachCustomKeyEventHandler((event: KeyboardEvent) => {
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

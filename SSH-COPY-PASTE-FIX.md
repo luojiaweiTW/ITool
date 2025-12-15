@@ -162,3 +162,19 @@ navigator.clipboard.readText().then(text => {
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

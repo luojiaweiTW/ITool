@@ -35,6 +35,19 @@ contextBridge.exposeInMainWorld('electronAPI', {
   killProcess: (pid: number) => ipcRenderer.invoke('kill-process', pid),
 })
 
+/**
+ * 暴露符合 src/types/electron.d.ts 定义的 API
+ */
+contextBridge.exposeInMainWorld('electron', {
+  english: {
+    selectDataset: () => ipcRenderer.invoke('english-select-dataset'),
+    resolvePath: (basePath: string, ...segments: string[]) => ipcRenderer.invoke('english-resolve-path', basePath, ...segments),
+    pathInfo: (absolutePath: string) => ipcRenderer.invoke('english-path-info', absolutePath),
+    readFile: (absolutePath: string) => ipcRenderer.invoke('read-file', absolutePath),
+    getFileUrl: (absolutePath: string) => ipcRenderer.invoke('english-get-file-url', absolutePath),
+  }
+})
+
 // 类型声明
 export interface ElectronAPI {
   windowMinimize: () => void

@@ -101,7 +101,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, onMounted, onUnmounted, onActivated, onDeactivated } from 'vue'
+import { useRoute } from 'vue-router'
 import { storeToRefs } from 'pinia'
 import { useCalculatorStore } from '@/stores/calculator'
 import { ElMessage } from 'element-plus'
@@ -131,6 +132,32 @@ const {
 } = calculatorStore
 
 const displayInput = ref<HTMLInputElement | null>(null)
+const route = useRoute()
+const isListenerActive = ref(false)
+
+// 检查焦点是否在任何输入框中（除了计算器输入框）
+const isFocusInInput = (): boolean => {
+  const activeElement = document.activeElement
+  
+  // 如果没有焦点，返回 false
+  if (!activeElement) return false
+  
+  // 如果焦点在计算器输入框，返回 false（允许拦截）
+  if (activeElement === displayInput.value) return false
+  
+  // 检查是否在输入框或文本域中
+  const tagName = activeElement.tagName.toLowerCase()
+  if (tagName === 'input' || tagName === 'textarea') {
+    return true
+  }
+  
+  // 检查是否在可编辑元素中
+  if (activeElement.hasAttribute('contenteditable')) {
+    return true
+  }
+  
+  return false
+}
 
 // 处理输入框输入（支持复制粘贴）
 const handleInput = (event: Event) => {
@@ -235,7 +262,16 @@ const formatTime = (timestamp: number): string => {
 
 // 键盘事件监听
 const handleGlobalKeydown = (event: KeyboardEvent) => {
-  // 如果焦点不在输入框，也响应键盘事件
+  // 只有在计算器页面且监听器激活时才处理
+  if (!isListenerActive.value) return
+  
+  // 检查当前路由是否是计算器页面（使用路由名称或路径）
+  if (route.name !== 'Calculator' && !route.path.includes('calculator')) return
+  
+  // 如果焦点在其他输入框中，不拦截（让用户正常输入）
+  if (isFocusInInput()) return
+  
+  // 如果焦点不在计算器输入框，也响应键盘事件（用于全局快捷键）
   if (document.activeElement !== displayInput.value) {
     handleKeydown(event)
   }
@@ -247,56 +283,78 @@ onMounted(() => {
   
   // 监听全局键盘事件
   window.addEventListener('keydown', handleGlobalKeydown)
+  isListenerActive.value = true
 })
 
 onUnmounted(() => {
   window.removeEventListener('keydown', handleGlobalKeydown)
+  isListenerActive.value = false
+})
+
+// 处理 keep-alive 的激活/停用
+onActivated(() => {
+  // 组件被激活（从其他页面切回计算器页面）
+  if (!isListenerActive.value) {
+    window.addEventListener('keydown', handleGlobalKeydown)
+    isListenerActive.value = true
+  }
+  displayInput.value?.focus()
+})
+
+onDeactivated(() => {
+  // 组件被停用（切换到其他页面）
+  window.removeEventListener('keydown', handleGlobalKeydown)
+  isListenerActive.value = false
 })
 </script>
 
 <style scoped>
 .calculator-page {
-  padding: var(--spacing-lg);
+  padding: var(--spacing-md);
   height: 100vh;
   overflow: hidden;
 }
 
 .calculator-container {
   display: grid;
-  grid-template-columns: 400px 1fr;
-  gap: var(--spacing-lg);
-  height: calc(100vh - var(--spacing-lg) * 2);
+  grid-template-columns: 360px 1fr;
+  gap: var(--spacing-md);
+  height: calc(100vh - var(--spacing-md) * 2);
 }
 
 /* 计算器主体 */
 .calculator {
   background: var(--color-bg-secondary);
   border-radius: var(--border-radius);
-  padding: var(--spacing-lg);
+  padding: var(--spacing-md);
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
   display: flex;
   flex-direction: column;
-  gap: var(--spacing-md);
+  gap: var(--spacing-sm);
+  max-height: 100%;
+  overflow: hidden;
 }
 
 /* 显示屏 */
 .display-section {
   background: rgba(0, 0, 0, 0.3);
   border-radius: var(--border-radius-sm);
-  padding: var(--spacing-md);
-  min-height: 120px;
+  padding: var(--spacing-sm) var(--spacing-md);
+  min-height: 100px;
   display: flex;
   flex-direction: column;
   justify-content: flex-end;
+  flex-shrink: 0;
 }
 
 .expression {
   color: var(--neon-blue);
-  font-size: 16px;
+  font-size: 14px;
   opacity: 0.7;
-  margin-bottom: var(--spacing-xs);
+  margin-bottom: 4px;
   text-align: right;
   font-family: 'Courier New', monospace;
+  line-height: 1.4;
 }
 
 .display {
@@ -309,7 +367,7 @@ onUnmounted(() => {
   border: none;
   outline: none;
   color: var(--color-text);
-  font-size: 48px;
+  font-size: 36px;
   font-weight: bold;
   text-align: right;
   font-family: 'Courier New', monospace;
@@ -325,8 +383,9 @@ onUnmounted(() => {
 .buttons {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
-  gap: var(--spacing-sm);
+  gap: 8px;
   flex: 1;
+  min-height: 0;
 }
 
 .btn {
@@ -334,14 +393,15 @@ onUnmounted(() => {
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: var(--border-radius-sm);
   color: var(--color-text);
-  font-size: 24px;
+  font-size: 18px;
   font-weight: 500;
   cursor: pointer;
   transition: all 0.2s ease;
-  min-height: 60px;
+  min-height: 48px;
   display: flex;
   align-items: center;
   justify-content: center;
+  padding: 0;
 }
 
 .btn:hover {
@@ -371,7 +431,7 @@ onUnmounted(() => {
 .btn-equals {
   background: var(--neon-blue);
   color: var(--color-bg);
-  font-size: 32px;
+  font-size: 20px;
   font-weight: bold;
 }
 
@@ -394,25 +454,29 @@ onUnmounted(() => {
 .history-panel {
   background: var(--color-bg-secondary);
   border-radius: var(--border-radius);
-  padding: var(--spacing-lg);
+  padding: var(--spacing-md);
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  min-height: 0;
+  max-height: 100%;
 }
 
 .history-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: var(--spacing-md);
-  padding-bottom: var(--spacing-md);
+  margin-bottom: var(--spacing-sm);
+  padding-bottom: var(--spacing-sm);
   border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  flex-shrink: 0;
 }
 
 .history-header h3 {
   color: var(--neon-blue);
-  font-size: 20px;
+  font-size: 16px;
   margin: 0;
+  font-weight: 600;
 }
 
 .clear-history-btn {
@@ -420,13 +484,14 @@ onUnmounted(() => {
   border: 1px solid rgba(239, 68, 68, 0.3);
   border-radius: var(--border-radius-sm);
   color: #ef4444;
-  width: 36px;
-  height: 36px;
+  width: 28px;
+  height: 28px;
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
   transition: all 0.2s ease;
+  font-size: 14px;
 }
 
 .clear-history-btn:hover {
@@ -438,6 +503,7 @@ onUnmounted(() => {
   flex: 1;
   overflow-y: auto;
   overflow-x: hidden;
+  min-height: 0;
 }
 
 /* 霓虹风格滚动条 */
@@ -464,8 +530,8 @@ onUnmounted(() => {
   background: rgba(255, 255, 255, 0.03);
   border: 1px solid rgba(255, 255, 255, 0.05);
   border-radius: var(--border-radius-sm);
-  padding: var(--spacing-md);
-  margin-bottom: var(--spacing-sm);
+  padding: var(--spacing-sm);
+  margin-bottom: 8px;
   cursor: pointer;
   transition: all 0.2s ease;
   position: relative;
@@ -479,40 +545,44 @@ onUnmounted(() => {
 
 .history-expression {
   color: var(--color-text);
-  font-size: 16px;
+  font-size: 14px;
   font-family: 'Courier New', monospace;
   margin-bottom: 4px;
+  line-height: 1.4;
 }
 
 .history-result {
   color: var(--neon-blue);
-  font-size: 20px;
+  font-size: 16px;
   font-weight: bold;
   font-family: 'Courier New', monospace;
   margin-bottom: 4px;
+  line-height: 1.4;
 }
 
 .history-time {
   color: var(--color-text-secondary);
-  font-size: 12px;
+  font-size: 11px;
+  opacity: 0.7;
 }
 
 .delete-btn {
   position: absolute;
-  top: var(--spacing-sm);
-  right: var(--spacing-sm);
+  top: 6px;
+  right: 6px;
   background: rgba(239, 68, 68, 0.15);
   border: 1px solid rgba(239, 68, 68, 0.3);
   border-radius: 50%;
   color: #ef4444;
-  width: 24px;
-  height: 24px;
+  width: 20px;
+  height: 20px;
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
   opacity: 0;
   transition: all 0.2s ease;
+  font-size: 12px;
 }
 
 .history-item:hover .delete-btn {
@@ -556,7 +626,7 @@ onUnmounted(() => {
   }
 
   .calculator {
-    max-width: 400px;
+    max-width: 360px;
     margin: 0 auto;
   }
 }

@@ -538,6 +538,7 @@
       title="建表语句"
       width="800px"
       :close-on-click-modal="false"
+      @closed="clearCreateTableDialog"
     >
       <div class="create-table-info">
         <div class="create-table-header">
@@ -1193,6 +1194,12 @@ function executeCreateTableSQL() {
   sqlInput.value = createTableSQL.value
   showCreateTableDialog.value = false
   ElMessage.success('已加载到SQL编辑器')
+}
+
+// 清理建表语句对话框状态
+function clearCreateTableDialog() {
+  currentTableName.value = ''
+  createTableSQL.value = ''
 }
 
 // ============ SQL查询 ============

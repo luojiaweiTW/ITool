@@ -206,9 +206,12 @@ const menuCategories: MenuCategory[] = [
     children: [
       { path: '/tools/clipboard-history', title: '剪贴板', icon: 'i-mdi-clipboard-text-clock' },
       { path: '/tools/screenshot', title: '截图', icon: 'i-mdi-camera-outline' },
+      { path: '/tools/file-finder', title: '文件查找', icon: 'i-mdi-file-search' },
+      { path: '/tools/code-packer', title: '代码打包', icon: 'i-mdi-package-variant-closed' },
       { path: '/tools/knowledge', title: '知识库', icon: 'i-mdi-book-open-page-variant' },
       { path: '/tools/snippets', title: '代码片段', icon: 'i-mdi-code-braces-box' },
       { path: '/tools/bookmarks', title: '收藏夹', icon: 'i-mdi-bookmark-multiple' },
+      { path: '/tools/todo-list', title: '待办事项', icon: 'i-mdi-checkbox-marked-outline' },
       { path: '/tools/system-monitor', title: '系统监控', icon: 'i-mdi-monitor-dashboard' },
       { path: '/tools/weather', title: '天气', icon: 'i-mdi-weather-partly-cloudy' },
       { path: '/tools/calculator', title: '计算器', icon: 'i-carbon-calculator' },

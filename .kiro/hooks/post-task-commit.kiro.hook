@@ -1,0 +1,13 @@
+{
+  "enabled": true,
+  "name": "无条件交付 - 自动提交推送",
+  "description": "任务完成后自动执行提交和推送。包含：1) 强制校验（未提交变更、未解决审查问题、steering 更新）；2) 生成规范化 commit message（type: core intent + Why/What/Risk 结构）；3) 自动 push 到远端，无需人工确认。",
+  "version": "1",
+  "when": {
+    "type": "userTriggered"
+  },
+  "then": {
+    "type": "askAgent",
+    "prompt": "执行「无条件交付」流程：\n\n## 1️⃣ 提交前强制校验\n运行以下检查：\n- `git status` 检查是否存在未提交变更\n- 检查是否有未解决的审查问题（review comments）\n- 检查 .kiro/steering/ 目录是否有未落盘的更新\n\n如果任何检查失败，报告问题并停止流程。\n\n## 2️⃣ 生成规范化 Commit Message\n**禁止**使用模糊提交信息如：❌ fix bug ❌ update code\n\n**必须**使用以下结构：\n```\n<type>: <core intent>\n- Why: 业务/技术动机\n- What: 核心改动点（最多 3 条）\n- Risk: 是否存在潜在影响\n```\n\ntype 可选值：feat, fix, refactor, docs, test, chore, perf\n\n示例：\n```\nfix: correct alarm status transition validation\n- Why: prevent illegal state jump during batch edit\n- What:\n  - enforce state machine validation\n  - add defensive null handling\n- Risk: low, scoped to alarm edit flow\n```\n\n根据 `git diff --staged` 的内容生成符合规范的 commit message。\n\n## 3️⃣ 执行提交和推送\n通过所有检查后，执行：\n1. `git commit -m \"<生成的commit message>\"`\n2. `git push`\n\n**不允许停在本地**，必须推送到远端。\n\n报告最终执行结果。"
+  }
+}

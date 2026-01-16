@@ -31,19 +31,33 @@ contextBridge.exposeInMainWorld('electron', {
       return ipcRenderer.invoke('ssh:resize', cols, rows)
     },
     
-    // 监听输出
+    // 监听输出 - 🔥 修复：返回移除监听器的函数
     onOutput: (callback) => {
-      ipcRenderer.on('ssh:output', (_event, data) => callback(data))
+      const handler = (_event, data) => callback(data)
+      ipcRenderer.on('ssh:output', handler)
+      // 返回移除监听器的函数
+      return () => ipcRenderer.removeListener('ssh:output', handler)
     },
     
-    // 监听错误
+    // 监听错误 - 🔥 修复：返回移除监听器的函数
     onError: (callback) => {
-      ipcRenderer.on('ssh:error', (_event, data) => callback(data))
+      const handler = (_event, data) => callback(data)
+      ipcRenderer.on('ssh:error', handler)
+      return () => ipcRenderer.removeListener('ssh:error', handler)
     },
     
-    // 监听关闭
+    // 监听关闭 - 🔥 修复：返回移除监听器的函数
     onClose: (callback) => {
-      ipcRenderer.on('ssh:close', (_event, code) => callback(code))
+      const handler = (_event, code) => callback(code)
+      ipcRenderer.on('ssh:close', handler)
+      return () => ipcRenderer.removeListener('ssh:close', handler)
+    },
+    
+    // 🔥 新增：移除所有 SSH 相关监听器
+    removeAllListeners: () => {
+      ipcRenderer.removeAllListeners('ssh:output')
+      ipcRenderer.removeAllListeners('ssh:error')
+      ipcRenderer.removeAllListeners('ssh:close')
     },
     
     // 保存历史记录
@@ -226,7 +240,41 @@ contextBridge.exposeInMainWorld('electronAPI', {
   system: {
     getInfo: () => ipcRenderer.invoke('system:getInfo'),
   },
-  
+
+  // 待办事项
+  todos: {
+    save: (data) => ipcRenderer.invoke('todos:save', data),
+    load: () => ipcRenderer.invoke('todos:load'),
+  },
+
+  // 文件查找器
+  fileFinder: {
+    selectFolder: () => ipcRenderer.invoke('dialog:selectFolder'),
+    scanDir: (dirPath, extension) => ipcRenderer.invoke('fs:scanDir', dirPath, extension),
+    showItemInFolder: (filePath) => ipcRenderer.invoke('shell:showItemInFolder', filePath),
+    copyFileToClipboard: (filePath) => ipcRenderer.invoke('clipboard:copyFile', filePath),
+    // 流式事件监听
+    onFileFound: (callback) => {
+      ipcRenderer.removeAllListeners('fileFinder:fileFound')
+      ipcRenderer.on('fileFinder:fileFound', (_event, data) => callback(data))
+    },
+    onScanComplete: (callback) => {
+      ipcRenderer.removeAllListeners('fileFinder:scanComplete')
+      ipcRenderer.on('fileFinder:scanComplete', (_event, data) => callback(data))
+    },
+    removeListeners: () => {
+      ipcRenderer.removeAllListeners('fileFinder:fileFound')
+      ipcRenderer.removeAllListeners('fileFinder:scanComplete')
+    },
+  },
+
+  // 代码打包器
+  codePacker: {
+    selectFolder: () => ipcRenderer.invoke('dialog:selectFolder'),
+    findFiles: (dirPath, fileNames, extensions) => ipcRenderer.invoke('codePacker:findFiles', dirPath, fileNames, extensions),
+    readFiles: (filePaths) => ipcRenderer.invoke('codePacker:readFiles', filePaths),
+  },
+
   // 通用 IPC 调用（用于系统监控等需要灵活调用的场景）
   invoke: (channel, ...args) => ipcRenderer.invoke(channel, ...args),
 })

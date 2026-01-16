@@ -932,9 +932,10 @@ declare global {
         sendCommand: (command: string) => Promise<{ success: boolean; error?: string }>
         sendData: (data: string) => Promise<{ success: boolean; error?: string }>
         resize: (cols: number, rows: number) => Promise<{ success: boolean; error?: string }>
-        onOutput: (callback: (data: string) => void) => void
-        onError: (callback: (error: string) => void) => void
-        onClose: (callback: (code: number) => void) => void
+        onOutput: (callback: (data: string) => void) => (() => void) | void
+        onError: (callback: (error: string) => void) => (() => void) | void
+        onClose: (callback: (code: number) => void) => (() => void) | void
+        removeAllListeners: () => void
         saveHistory: (history: any[]) => Promise<{ success: boolean; error?: string }>
         loadHistory: () => Promise<{ success: boolean; data?: any[]; error?: string }>
       }
@@ -1023,6 +1024,11 @@ const isLoadingHistory = ref(false)
 const isConnecting = ref(false)
 let connectTimeout: any = null
 let clickTimeout: any = null
+
+// 🔥 IPC 监听器清理函数
+let removeOutputListener: (() => void) | null = null
+let removeErrorListener: (() => void) | null = null
+let removeCloseListener: (() => void) | null = null
 
 // MySQL功能已移至独立页面 /tools/mysql
 
@@ -1162,6 +1168,23 @@ let outputBuffer = ''
 let outputRafId: number | null = null
 let lastOutputTime = 0
 const OUTPUT_THROTTLE_MS = 16 // 限制为60fps
+
+// 日志级别高亮：给 ERROR/WARN/INFO/DEBUG 等关键字添加颜色
+const highlightLogLevels = (text: string): string => {
+  // ANSI 颜色码
+  const RESET = '\x1b[0m'
+  const RED = '\x1b[31m'      // ERROR - 红色
+  const YELLOW = '\x1b[33m'   // WARN - 黄色
+  const BLUE = '\x1b[34m'     // INFO - 蓝色
+  const GRAY = '\x1b[90m'     // DEBUG - 灰色
+
+  // 匹配日志级别关键字（区分大小写，匹配常见格式）
+  return text
+    .replace(/\b(ERROR|Error|error)\b/g, `${RED}$1${RESET}`)
+    .replace(/\b(WARN|WARNING|Warn|Warning|warn|warning)\b/g, `${YELLOW}$1${RESET}`)
+    .replace(/\b(INFO|Info|info)\b/g, `${BLUE}$1${RESET}`)
+    .replace(/\b(DEBUG|Debug|debug|TRACE|Trace|trace)\b/g, `${GRAY}$1${RESET}`)
+}
 
 // 性能优化：输出速率限制
 const shouldThrottleOutput = () => {
@@ -1407,15 +1430,18 @@ const quickConnect = async (item: ConnectionRecord) => {
     return
   }
 
-  // 立即设置连接状态，防止快速多次点击
-  isConnecting.value = true
-
   // 先加载配置（不打开对话框）
   loadHistoryConfig(item)
 
   // 防抖延时 300ms，避免频繁点击
   connectTimeout = setTimeout(async () => {
     connectTimeout = null
+
+    // 🔥 再次检查连接状态，防止在延迟期间状态变化
+    if (isConnecting.value) {
+      console.log('Already connecting (after delay), ignoring')
+      return
+    }
 
     try {
       // 如果已经连接，先断开
@@ -1429,15 +1455,15 @@ const quickConnect = async (item: ConnectionRecord) => {
       // 等待表单更新
       await nextTick()
 
-      // 自动连接
+      // 自动连接（connect 函数内部会处理 isConnecting 状态）
       if (canConnect.value) {
         console.log('Auto-connecting...')
         await connect()
       } else {
         ElMessage.warning('连接信息不完整，请补充后再连接')
       }
-    } finally {
-      isConnecting.value = false
+    } catch (error) {
+      console.error('Quick connect error:', error)
     }
   }, 300)
 
@@ -2554,7 +2580,19 @@ const connect = async () => {
     // 🔥 关键修复：在连接开始前就初始化 xterm 终端，确保连接日志可见
     if (!xterm) {
       await nextTick()
-      initTerminal()
+      const initSuccess = await initTerminal()
+      if (!initSuccess) {
+        console.error('[connect] Failed to initialize terminal')
+        // 再尝试一次
+        await new Promise(resolve => setTimeout(resolve, 200))
+        await nextTick()
+        const retrySuccess = await initTerminal()
+        if (!retrySuccess) {
+          ElMessage.error('终端初始化失败，请刷新页面重试')
+          isConnecting.value = false
+          return
+        }
+      }
     }
     
     // 清空之前的输出
@@ -2591,7 +2629,8 @@ const connect = async () => {
 
       if (result.success) {
         connected.value = true
-        isConnecting.value = false
+        // 🔥 注意：这里不重置 isConnecting，让调用方（如 quickConnect）来处理
+        // 或者如果是直接调用 connect()，则在下面统一处理
         
         // 显示欢迎信息
         if (xterm) {
@@ -2602,7 +2641,6 @@ const connect = async () => {
         await addToHistory()
         ElMessage.success('SSH 连接成功')
       } else {
-        isConnecting.value = false
         // 连接失败时，确保错误信息显示
         const errorMsg = result.error || '连接失败'
         if (xterm) {
@@ -2620,12 +2658,14 @@ const connect = async () => {
       ElMessage.warning('SSH 功能仅在桌面应用中可用')
     }
   } catch (error: any) {
-    isConnecting.value = false
     if (xterm) {
       xterm.writeln(`\x1b[31m连接错误: ${error.message}\x1b[0m\r\n`)
     }
     addConnectionLog(`连接错误: ${error.message}`, 'error')
     ElMessage.error('连接失败')
+  } finally {
+    // 🔥 统一在 finally 中重置连接状态
+    isConnecting.value = false
   }
 }
 
@@ -2681,70 +2721,107 @@ const disconnect = async () => {
 // ==================== Xterm.js 终端管理 ====================
 
 // 初始化xterm终端
-const initTerminal = () => {
+const initTerminal = async (): Promise<boolean> => {
+  // 🔥 修复：多次尝试获取容器，解决偶发的 DOM 未就绪问题
+  let retryCount = 0
+  const maxRetries = 5
+  
+  while (!terminalContainer.value && retryCount < maxRetries) {
+    console.log(`[initTerminal] Waiting for container... attempt ${retryCount + 1}/${maxRetries}`)
+    await nextTick()
+    await new Promise(resolve => setTimeout(resolve, 50))
+    retryCount++
+  }
+  
   if (!terminalContainer.value) {
-    console.error('Terminal container not found')
-    return
+    console.error('[initTerminal] Terminal container not found after retries')
+    return false
   }
 
   // 如果已存在，先销毁
   if (xterm) {
+    console.log('[initTerminal] Disposing existing terminal')
     xterm.dispose()
     xterm = null
   }
 
-  // 创建终端实例（性能优化配置）
-  xterm = new Terminal({
-    // 性能优化：禁用光标闪烁减少重绘
-    cursorBlink: false,
-    cursorStyle: 'block',
-    fontSize: 14,
-    fontFamily: 'Consolas, "Courier New", monospace',
-    theme: {
-      background: '#0a0e27',
-      foreground: '#00ffff',
-      cursor: '#00ffff',
-      selection: 'rgba(0, 255, 255, 0.3)',
-      black: '#000000',
-      red: '#ff5555',
-      green: '#50fa7b',
-      yellow: '#f1fa8c',
-      blue: '#bd93f9',
-      magenta: '#ff79c6',
-      cyan: '#8be9fd',
-      white: '#bfbfbf',
-      brightBlack: '#4d4d4d',
-      brightRed: '#ff6e67',
-      brightGreen: '#5af78e',
-      brightYellow: '#f4f99d',
-      brightBlue: '#caa9fa',
-      brightMagenta: '#ff92d0',
-      brightCyan: '#9aedfe',
-      brightWhite: '#e6e6e6',
-    },
-    cols: 100,
-    rows: 30,
-    // 性能优化：减少滚动缓冲区
-    scrollback: 500,
-    convertEol: true,
-    // 性能优化：禁用平滑滚动
-    smoothScrollDuration: 0,
-    // 性能优化：快速滚动
-    fastScrollModifier: 'shift',
-    fastScrollSensitivity: 5,
-  })
+  try {
+    // 创建终端实例（性能优化配置）
+    xterm = new Terminal({
+      // 性能优化：禁用光标闪烁减少重绘
+      cursorBlink: false,
+      cursorStyle: 'block',
+      fontSize: 14,
+      fontFamily: 'Consolas, "Courier New", monospace',
+      theme: {
+        background: '#000000',
+        foreground: '#ffffff',
+        cursor: '#ffffff',
+        selection: 'rgba(255, 255, 255, 0.3)',
+        black: '#000000',
+        red: '#ff5555',
+        green: '#50fa7b',
+        yellow: '#f1fa8c',
+        blue: '#bd93f9',
+        magenta: '#ff79c6',
+        cyan: '#8be9fd',
+        white: '#ffffff',
+        brightBlack: '#4d4d4d',
+        brightRed: '#ff6e67',
+        brightGreen: '#5af78e',
+        brightYellow: '#f4f99d',
+        brightBlue: '#caa9fa',
+        brightMagenta: '#ff92d0',
+        brightCyan: '#9aedfe',
+        brightWhite: '#ffffff',
+      },
+      cols: 100,
+      rows: 30,
+      // 性能优化：减少滚动缓冲区
+      scrollback: 500,
+      convertEol: true,
+      // 性能优化：禁用平滑滚动
+      smoothScrollDuration: 0,
+      // 性能优化：快速滚动
+      fastScrollModifier: 'shift',
+      fastScrollSensitivity: 5,
+    })
 
-  // 创建自适应插件
-  fitAddon = new FitAddon()
-  xterm.loadAddon(fitAddon)
+    // 创建自适应插件
+    fitAddon = new FitAddon()
+    xterm.loadAddon(fitAddon)
 
-  // 挂载到容器
-  xterm.open(terminalContainer.value)
+    // 挂载到容器
+    xterm.open(terminalContainer.value)
+    console.log('[initTerminal] Terminal opened successfully')
 
-  // 自适应大小
-  setTimeout(() => {
-    fitAddon?.fit()
-  }, 100)
+    // 🔥 修复：多次调用 fit() 确保尺寸正确
+    // 第一次立即调用
+    try {
+      fitAddon?.fit()
+    } catch (e) {
+      console.warn('[initTerminal] First fit() failed:', e)
+    }
+    
+    // 第二次延迟调用，等待布局稳定
+    setTimeout(() => {
+      try {
+        fitAddon?.fit()
+        console.log('[initTerminal] Second fit() completed')
+      } catch (e) {
+        console.warn('[initTerminal] Second fit() failed:', e)
+      }
+    }, 100)
+    
+    // 第三次延迟调用，确保完全稳定
+    setTimeout(() => {
+      try {
+        fitAddon?.fit()
+        console.log('[initTerminal] Third fit() completed')
+      } catch (e) {
+        console.warn('[initTerminal] Third fit() failed:', e)
+      }
+    }, 300)
 
   // 用于累积命令输入的缓冲区
   let commandBuffer = ''
@@ -2935,6 +3012,11 @@ const initTerminal = () => {
   window.addEventListener('resize', resizeHandler)
   
   console.log('✓ Xterm initialized with copy/paste support')
+  return true
+  } catch (error) {
+    console.error('[initTerminal] Failed to initialize terminal:', error)
+    return false
+  }
 }
 
 // 销毁xterm终端
@@ -3285,7 +3367,7 @@ onMounted(() => {
   // 监听 SSH 输出（性能优化：使用RAF批处理）
   if (window.electron && window.electron.ssh) {
     console.log('Setting up SSH listeners')
-    window.electron.ssh.onOutput((data: string) => {
+    removeOutputListener = window.electron.ssh.onOutput((data: string) => {
       // 🔥 添加连接日志 - 处理多行数据
       const lines = data.split(/\r?\n/).filter(line => line.trim())
       lines.forEach(line => {
@@ -3313,7 +3395,8 @@ onMounted(() => {
       if (xterm) {
         // 如果已连接，使用性能优化的批量写入
         if (connected.value) {
-          outputBuffer += data
+          // 应用日志级别高亮
+          outputBuffer += highlightLogLevels(data)
           
           // 性能优化：限制输出频率到60fps
           if (!outputRafId && !shouldThrottleOutput()) {
@@ -3387,9 +3470,9 @@ onMounted(() => {
           xterm.write(data)
         }
       }
-    })
+    }) || null
 
-    window.electron.ssh.onError((error: string) => {
+    removeErrorListener = window.electron.ssh.onError((error: string) => {
       // 🔥 添加连接日志
       addConnectionLog(error, 'error')
       
@@ -3399,9 +3482,9 @@ onMounted(() => {
       } else {
         addTerminalLine(error, 'error')
       }
-    })
+    }) || null
 
-    window.electron.ssh.onClose(() => {
+    removeCloseListener = window.electron.ssh.onClose(() => {
       connected.value = false
       if (xterm) {
         xterm.writeln('\r\n\x1b[33m连接已关闭\x1b[0m\r\n')
@@ -3410,7 +3493,7 @@ onMounted(() => {
       setTimeout(() => {
         destroyTerminal()
       }, 500)
-    })
+    }) || null
   } else {
     console.error('window.electron.ssh is not available!')
   }
@@ -3440,6 +3523,20 @@ onMounted(() => {
 // 组件卸载前清理
 onBeforeUnmount(() => {
   console.log('SSH Tool unmounting, cleaning up...')
+
+  // 🔥 清理 IPC 监听器
+  if (removeOutputListener) {
+    removeOutputListener()
+    removeOutputListener = null
+  }
+  if (removeErrorListener) {
+    removeErrorListener()
+    removeErrorListener = null
+  }
+  if (removeCloseListener) {
+    removeCloseListener()
+    removeCloseListener = null
+  }
 
   // 清理所有定时器
   if (saveHistoryTimer) {
@@ -4027,7 +4124,7 @@ onBeforeUnmount(() => {
   flex: 1;
   min-height: 0;
   padding: 8px;
-  background-color: #0a0e27;
+  background-color: #000000;
 }
 
 .terminal-empty-overlay {
@@ -4040,7 +4137,7 @@ onBeforeUnmount(() => {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  background-color: rgba(10, 14, 39, 0.95);
+  background-color: rgba(0, 0, 0, 0.95);
   color: #666;
   font-size: 1.2em;
   z-index: 1;

@@ -1,0 +1,15 @@
+{
+  "enabled": true,
+  "name": "提问前质疑与审查",
+  "description": "在执行用户的命令或回答问题之前，先对用户的输入进行质疑和思考，结合当前项目上下文，判断用户的提问或方案是否存在问题、是否有更优解，如有则指出并讨论，而不是直接执行。",
+  "version": "1",
+  "when": {
+    "type": "promptSubmit"
+  },
+  "then": {
+    "type": "askAgent",
+    "prompt": "在执行用户的命令或回答问题之前，先对用户的输入进行质疑和思考，结合当前项目上下文，判断用户的提问或方案是否存在问题、是否有更优解，如有则指出并讨论，而不是直接执行。"
+  },
+  "workspaceFolderName": "chat-ai",
+  "shortName": "question-and-review"
+}

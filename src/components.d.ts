@@ -12,6 +12,7 @@ declare module 'vue' {
     CompactButtonGroup: typeof import('./components/CompactButtonGroup.vue')['default']
     CompactCard: typeof import('./components/CompactCard.vue')['default']
     ElAlert: typeof import('element-plus/es')['ElAlert']
+    ElAutocomplete: typeof import('element-plus/es')['ElAutocomplete']
     ElBadge: typeof import('element-plus/es')['ElBadge']
     ElButton: typeof import('element-plus/es')['ElButton']
     ElButtonGroup: typeof import('element-plus/es')['ElButtonGroup']

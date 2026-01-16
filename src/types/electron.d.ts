@@ -222,7 +222,45 @@ export interface ElectronWindowAPI {
   system?: {
     getInfo?: () => Promise<SystemInfoResult>
   }
-  
+
+  // 待办事项
+  todos?: {
+    save: (data: { todos: any[]; tags: any[] }) => Promise<{ success: boolean; error?: string }>
+    load: () => Promise<{ todos: any[]; tags: any[] } | null>
+  }
+
+  // 文件查找器
+  fileFinder?: {
+    selectFolder: () => Promise<{ success: boolean; path?: string; canceled?: boolean; error?: string }>
+    scanDir: (dirPath: string, extension: string) => Promise<{
+      success: boolean
+      count?: number
+      error?: string
+    }>
+    showItemInFolder: (filePath: string) => Promise<{ success: boolean; error?: string }>
+    copyFileToClipboard: (filePath: string) => Promise<{ success: boolean; error?: string }>
+    // 流式事件监听
+    onFileFound: (callback: (file: { name: string; path: string; size: number; mtime: number }) => void) => void
+    onScanComplete: (callback: (data: { count: number }) => void) => void
+    removeListeners: () => void
+  }
+
+  // ��码打包器
+  codePacker?: {
+    selectFolder: () => Promise<{ success: boolean; path?: string; canceled?: boolean; error?: string }>
+    findFiles: (dirPath: string, fileNames: string[], extensions: string[]) => Promise<{
+      success: boolean
+      files: Array<{ name: string; path: string; baseName: string }>
+      notFound: string[]
+      error?: string
+    }>
+    readFiles: (filePaths: string[]) => Promise<{
+      success: boolean
+      contents: Array<{ path: string; name: string; content: string; error?: string }>
+      error?: string
+    }>
+  }
+
   // 通用 IPC 调用
   invoke?: (channel: string, ...args: any[]) => Promise<any>
 }

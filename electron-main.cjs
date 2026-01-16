@@ -7,12 +7,13 @@ const { Client } = require('ssh2')
 const https = require('https')
 const http = require('http')
 const mysql = require('mysql2/promise')
-// electron-screenshots 导入
-const Screenshots = require('electron-screenshots')
-console.log('📸 [Init] Screenshots module loaded:', typeof Screenshots)
 
 // 判断是否为开发环境
 const isDev = !app.isPackaged
+
+// electron-screenshots 导入（必须在 app 初始化后）
+const Screenshots = require('electron-screenshots')
+console.log('📸 [Init] Screenshots module loaded:', typeof Screenshots)
 
 // 🔧 根据Electron官方文档配置应用信息
 // 参考：https://www.electronjs.org/docs/latest/api/app
@@ -4305,17 +4306,299 @@ ipcMain.handle('redis:deleteKey', async (_event, key) => {
     if (!redisClient) {
       return { success: false, error: '请先连接 Redis' }
     }
-    
+
     console.log('🔵 [Redis] 删除键:', key)
-    
+
     await redisClient.del(key)
-    
+
     console.log('✅ [Redis] 删除键成功')
-    
+
     return { success: true }
   } catch (error) {
     console.error('❌ [Redis] 删除键失败:', error.message)
     return { success: false, error: error.message }
+  }
+})
+
+// ==================== 待办事项 ====================
+
+/**
+ * 保存待办事项数据
+ */
+ipcMain.handle('todos:save', async (_event, data) => {
+  try {
+    const todosPath = path.join(appDataPath, 'todos.json')
+    fs.writeFileSync(todosPath, JSON.stringify(data, null, 2), 'utf-8')
+    console.log('✅ [Todos] 保存成功')
+    return { success: true }
+  } catch (error) {
+    console.error('❌ [Todos] 保存失败:', error.message)
+    return { success: false, error: error.message }
+  }
+})
+
+/**
+ * 加载待办事项数据
+ */
+ipcMain.handle('todos:load', async () => {
+  try {
+    const todosPath = path.join(appDataPath, 'todos.json')
+    if (fs.existsSync(todosPath)) {
+      const content = fs.readFileSync(todosPath, 'utf-8')
+      const data = JSON.parse(content)
+      console.log('✅ [Todos] 加载成功')
+      return data
+    }
+    return null
+  } catch (error) {
+    console.error('❌ [Todos] 加载失败:', error.message)
+    return null
+  }
+})
+
+// ==================== 文件查找器 ====================
+
+/**
+ * 选择文件夹对话框
+ */
+ipcMain.handle('dialog:selectFolder', async () => {
+  try {
+    const result = await dialog.showOpenDialog(mainWindow, {
+      title: '选择文件夹',
+      properties: ['openDirectory']
+    })
+
+    if (result.canceled) {
+      return { success: false, canceled: true }
+    }
+
+    return { success: true, path: result.filePaths[0] }
+  } catch (error) {
+    console.error('❌ [FileFinder] Select folder error:', error)
+    return { success: false, error: error.message }
+  }
+})
+
+/**
+ * 递归扫描目录，按后缀过滤文件（流式返回）
+ * @param {string} dirPath - 目录路径
+ * @param {string} extension - 文件后缀（不带点，如 "jar"、"txt"）
+ */
+ipcMain.handle('fs:scanDir', async (_event, dirPath, extension) => {
+  try {
+    console.log(`🔍 [FileFinder] Scanning directory: ${dirPath}`)
+    console.log(`🔍 [FileFinder] Extension filter: ${extension}`)
+
+    const ext = extension.toLowerCase().replace(/^\./, '') // 移除开头的点（如果有）
+    let fileCount = 0
+
+    // 递归遍历函数
+    async function scanRecursive(currentPath) {
+      try {
+        const entries = await fs.promises.readdir(currentPath, { withFileTypes: true })
+
+        for (const entry of entries) {
+          const fullPath = path.join(currentPath, entry.name)
+
+          if (entry.isDirectory()) {
+            // 递归进入子目录
+            await scanRecursive(fullPath)
+          } else if (entry.isFile()) {
+            // 检查文件后缀
+            const fileExt = path.extname(entry.name).toLowerCase().slice(1)
+            if (fileExt === ext) {
+              try {
+                const stats = await fs.promises.stat(fullPath)
+                const fileInfo = {
+                  name: entry.name,
+                  path: fullPath,
+                  size: stats.size,
+                  mtime: stats.mtime.getTime()
+                }
+                // 流式发送每个找到的文件
+                mainWindow.webContents.send('fileFinder:fileFound', fileInfo)
+                fileCount++
+              } catch (statErr) {
+                // 跳过无法读取的文件
+                console.warn(`⚠️ [FileFinder] Cannot stat file: ${fullPath}`)
+              }
+            }
+          }
+        }
+      } catch (readErr) {
+        // 跳过无法读取的目录（权限问题等）
+        console.warn(`⚠️ [FileFinder] Cannot read directory: ${currentPath}`)
+      }
+    }
+
+    await scanRecursive(dirPath)
+
+    console.log(`✅ [FileFinder] Found ${fileCount} files with extension .${ext}`)
+
+    // 发送扫描完成信号
+    mainWindow.webContents.send('fileFinder:scanComplete', { count: fileCount })
+
+    return { success: true, count: fileCount }
+  } catch (error) {
+    console.error('❌ [FileFinder] Scan error:', error)
+    return { success: false, error: error.message }
+  }
+})
+
+/**
+ * 在文件管理器中打开文件所在位置
+ */
+ipcMain.handle('shell:showItemInFolder', async (_event, filePath) => {
+  try {
+    const { shell } = require('electron')
+    shell.showItemInFolder(filePath)
+    console.log(`✅ [FileFinder] Showing in folder: ${filePath}`)
+    return { success: true }
+  } catch (error) {
+    console.error('❌ [FileFinder] Show in folder error:', error)
+    return { success: false, error: error.message }
+  }
+})
+
+/**
+ * 复制文件到剪贴板（Windows）
+ */
+ipcMain.handle('clipboard:copyFile', async (_event, filePath) => {
+  try {
+    console.log(`📋 [FileFinder] Copying file to clipboard: ${filePath}`)
+
+    if (process.platform === 'win32') {
+      // Windows: 使用 PowerShell 将文件复制到剪贴板
+      const { exec } = require('child_process')
+      const escapedPath = filePath.replace(/'/g, "''")
+      const command = `powershell -command "Set-Clipboard -Path '${escapedPath}'"`
+
+      return new Promise((resolve) => {
+        exec(command, (error) => {
+          if (error) {
+            console.error('❌ [FileFinder] Copy to clipboard error:', error)
+            resolve({ success: false, error: error.message })
+          } else {
+            console.log(`✅ [FileFinder] File copied to clipboard`)
+            resolve({ success: true })
+          }
+        })
+      })
+    } else {
+      // 其他平台暂不支持
+      return { success: false, error: '此功能仅支持 Windows 系统' }
+    }
+  } catch (error) {
+    console.error('❌ [FileFinder] Copy to clipboard error:', error)
+    return { success: false, error: error.message }
+  }
+})
+
+// ==================== 代码打包器 (CodePacker) ====================
+
+/**
+ * 根据文件名列表和后缀列表查找文件
+ * @param {string} dirPath - 目录路径
+ * @param {string[]} fileNames - 文件名列表（不含后缀）
+ * @param {string[]} extensions - 后缀列表（不带点，如 ["java", "xml"]）
+ * @returns {Promise<{success: boolean, files: Array<{name: string, path: string, baseName: string}>, notFound: string[]}>}
+ */
+ipcMain.handle('codePacker:findFiles', async (_event, dirPath, fileNames, extensions) => {
+  try {
+    console.log(`🔍 [CodePacker] Searching in: ${dirPath}`)
+    console.log(`🔍 [CodePacker] File names: ${fileNames.join(', ')}`)
+    console.log(`🔍 [CodePacker] Extensions: ${extensions.join(', ')}`)
+
+    const foundFiles = []
+    const foundBaseNames = new Set()
+
+    // 构建要查找的完整文件名集合
+    const targetFiles = new Map() // key: 完整文件名(小写), value: {baseName, ext}
+    for (const baseName of fileNames) {
+      for (const ext of extensions) {
+        const fullName = `${baseName}.${ext}`.toLowerCase()
+        targetFiles.set(fullName, { baseName, ext })
+      }
+    }
+
+    // 递归遍历函数
+    async function scanRecursive(currentPath) {
+      try {
+        const entries = await fs.promises.readdir(currentPath, { withFileTypes: true })
+
+        for (const entry of entries) {
+          const fullPath = path.join(currentPath, entry.name)
+
+          if (entry.isDirectory()) {
+            await scanRecursive(fullPath)
+          } else if (entry.isFile()) {
+            const lowerName = entry.name.toLowerCase()
+            if (targetFiles.has(lowerName)) {
+              const { baseName } = targetFiles.get(lowerName)
+              foundFiles.push({
+                name: entry.name,
+                path: fullPath,
+                baseName: baseName
+              })
+              foundBaseNames.add(baseName.toLowerCase())
+            }
+          }
+        }
+      } catch (readErr) {
+        console.warn(`⚠️ [CodePacker] Cannot read directory: ${currentPath}`)
+      }
+    }
+
+    await scanRecursive(dirPath)
+
+    // 找出未找到的文件名
+    const notFound = fileNames.filter(name => !foundBaseNames.has(name.toLowerCase()))
+
+    console.log(`✅ [CodePacker] Found ${foundFiles.length} files, ${notFound.length} not found`)
+
+    return { success: true, files: foundFiles, notFound }
+  } catch (error) {
+    console.error('❌ [CodePacker] Find files error:', error)
+    return { success: false, error: error.message, files: [], notFound: fileNames }
+  }
+})
+
+/**
+ * 批量读取文件内容
+ * @param {string[]} filePaths - 文件路径列表
+ * @returns {Promise<{success: boolean, contents: Array<{path: string, name: string, content: string, error?: string}>}>}
+ */
+ipcMain.handle('codePacker:readFiles', async (_event, filePaths) => {
+  try {
+    console.log(`📖 [CodePacker] Reading ${filePaths.length} files`)
+
+    const contents = []
+
+    for (const filePath of filePaths) {
+      try {
+        const content = await fs.promises.readFile(filePath, 'utf-8')
+        contents.push({
+          path: filePath,
+          name: path.basename(filePath),
+          content: content
+        })
+      } catch (readErr) {
+        console.warn(`⚠️ [CodePacker] Cannot read file: ${filePath}`)
+        contents.push({
+          path: filePath,
+          name: path.basename(filePath),
+          content: '',
+          error: readErr.message
+        })
+      }
+    }
+
+    console.log(`✅ [CodePacker] Read ${contents.length} files`)
+
+    return { success: true, contents }
+  } catch (error) {
+    console.error('❌ [CodePacker] Read files error:', error)
+    return { success: false, error: error.message, contents: [] }
   }
 })
 

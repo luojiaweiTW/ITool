@@ -54,6 +54,9 @@ import TimeCalculator from '@/pages/tools/TimeCalculator/Index.vue'
 import Base64Image from '@/pages/tools/Base64Image/Index.vue'
 import EnglishReader from '@/pages/tools/EnglishReader/Index.vue'
 import WordBook from '@/pages/tools/WordBook/Index.vue'
+import TodoList from '@/pages/tools/TodoList/Index.vue'
+import FileFinder from '@/pages/tools/FileFinder/Index.vue'
+import CodePacker from '@/pages/tools/CodePacker/Index.vue'
 
 const routes: RouteRecordRaw[] = [
   {
@@ -629,7 +632,40 @@ const routes: RouteRecordRaw[] = [
           category: '知识管理',
         }
       },
-      
+      {
+        path: 'tools/todo-list',
+        name: 'TodoList',
+        component: TodoList,
+        meta: {
+          title: '待办事项',
+          description: '管理你的日常任务和待办',
+          icon: 'i-mdi-checkbox-marked-outline',
+          category: '知识管理',
+        }
+      },
+      {
+        path: 'tools/file-finder',
+        name: 'FileFinder',
+        component: FileFinder,
+        meta: {
+          title: '文件查找器',
+          description: '在目录中递归查找指定类型的文件',
+          icon: 'i-mdi-file-search',
+          category: '实用工具',
+        }
+      },
+      {
+        path: 'tools/code-packer',
+        name: 'CodePacker',
+        component: CodePacker,
+        meta: {
+          title: '代码打包器',
+          description: '将多个代码文件内容打包，便于喂给 AI',
+          icon: 'i-mdi-package-variant-closed',
+          category: '实用工具',
+        }
+      },
+
       // ========== 实用工具 ==========
       {
         path: 'tools/calculator',
